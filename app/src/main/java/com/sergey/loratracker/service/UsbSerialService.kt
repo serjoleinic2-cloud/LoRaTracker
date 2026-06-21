@@ -258,7 +258,10 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
     
     override fun onNewData(data: ByteArray?) {
         Log.d(TAG, "onNewData called, data=${data?.size ?: "null"} bytes")
-        data ?: return
+        if (data == null || data.isEmpty()) {
+            Log.w(TAG, "onNewData: empty or null data")
+            return
+        }
 
         val raw = String(data, Charsets.UTF_8)
         Log.d(TAG, "RAW: [$raw]")
