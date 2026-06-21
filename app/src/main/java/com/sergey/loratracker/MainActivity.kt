@@ -44,7 +44,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mapView: MapView
     private lateinit var usbManager: UsbManager
     private val viewModel: TrackerViewModel by viewModels()
-    private val soundDetector = Inmp441SoundDetector()
     private var lastPeakFreq = 0f
     private var lastCenterFreq = 0f
     private var stableCount = 0
@@ -174,23 +173,36 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUI(packet: TelemetryPacket) {
-        FileLogger.d("UI", "updateUI: delay=${packet.delayMs}")
+        val detection = Inmp441SoundDetector().detect(packet, packet.rssi.toFloat() + 100f)
+        FileLogger.d("DETECT", "peak=${packet.soundPeakFreq}Hz ratio=${packet.soundEnergyRatio} obj=${detection.detectedObject.displayName} dist=${detection.estimatedRadiusMeters}m conf=${detection.confidence}")
 
-        val text = buildString {
-            appendLine("ID: ${packet.delayMs}")
-            appendLine("Спутников: ${packet.gpsSats}")
-            appendLine("Lat: ${packet.latitude}")
-            appendLine("Lon: ${packet.longitude}")
-            appendLine("Темп: ${packet.temperature}°C")
-            appendLine("Пик: ${packet.soundPeakFreq}Hz")
-            appendLine("Centroid: ${packet.soundCenterFreq}Hz")
-            appendLine("RSSI: ${packet.rssi}")
+        runOnUiThread {
+            binding.gpsStatus.text = "GPS: ${packet.gpsSats} спутн."
+            binding.tempText.text = "Темп: ${packet.temperature}°C"
+            binding.rssiText.text = "RSSI: ${packet.rssi} dBm"
+            binding.peakFreqText.text = "Пик: ${packet.soundPeakFreq}Hz"
+            binding.centroidText.text = "Центр: ${packet.soundCenterFreq}Hz"
+            binding.maxRangeText.text = "Дальность: ${detection.detectedObject.maxDetectionRangeMeters}м"
+
+            if (detection.isObjectNearby && detection.detectedObject != DetectedObject.UNKNOWN) {
+                binding.objectEmoji.text = detection.detectedObject.emoji
+                binding.objectName.text = detection.detectedObject.displayName.uppercase()
+                binding.objectDescription.text = detection.reason
+                binding.distanceText.text = "Расстояние: ${detection.estimatedRadiusMeters?.toInt() ?: "?"}м"
+                binding.distanceText.visibility = View.VISIBLE
+
+                binding.alertCard.visibility = View.VISIBLE
+                binding.alertText.text = "⚠ ОБНАРУЖЕНО: ${detection.detectedObject.displayName.uppercase()}"
+
+                updateMap(packet, detection)
+            } else {
+                binding.objectEmoji.text = "\uD83D\uDD0B"
+                binding.objectName.text = "ПАТРУЛИРОВАНИЕ"
+                binding.objectDescription.text = "Сканирование..."
+                binding.distanceText.visibility = View.GONE
+                binding.alertCard.visibility = View.GONE
+            }
         }
-
-        binding.statusText.text = text
-        binding.statusText.invalidate()
-        binding.statusText.requestLayout()
-        FileLogger.d("UI", "statusText SET")
     }
 
     private fun updateConnectionStatus(connected: Boolean) {
@@ -209,29 +221,24 @@ class MainActivity : AppCompatActivity() {
         }
         mapView.overlays.add(detectorMarker)
 
-        if (detection.isObjectNearby && detection.detectedObject != DetectedObject.UNKNOWN) {
-            val dist = detection.estimatedRadiusMeters?.coerceAtMost(50f) ?: 10f
-            val angle = (packet.delayMs % 360).toDouble()
-            val objPoint = GeoPoint(
-                packet.latitude + kotlin.math.cos(Math.toRadians(angle)) * dist * 0.00001,
-                packet.longitude + kotlin.math.sin(Math.toRadians(angle)) * dist * 0.00001
-            )
+        val maxRange = detection.detectedObject.maxDetectionRangeMeters
+        val rangeCircle = Polygon().apply {
+            points = Polygon.pointsAsCircle(detectorPoint, maxRange.toDouble())
+            fillColor = 0x154CAF50
+            strokeColor = 0xFF4CAF50.toInt()
+            strokeWidth = 2f
+        }
+        mapView.overlays.add(rangeCircle)
 
-            val objMarker = Marker(mapView).apply {
-                position = objPoint
-                title = "${detection.detectedObject.emoji} ${detection.detectedObject.displayName}"
-                snippet = "Расстояние: ${dist.toInt()}м"
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+        if (detection.isObjectNearby && detection.estimatedRadiusMeters != null) {
+            val objRange = detection.estimatedRadiusMeters!!
+            val objCircle = Polygon().apply {
+                points = Polygon.pointsAsCircle(detectorPoint, objRange.toDouble())
+                fillColor = 0x22FF0000
+                strokeColor = 0xFFFF0000.toInt()
+                strokeWidth = 3f
             }
-            mapView.overlays.add(objMarker)
-
-            val line = Polyline().apply {
-                addPoint(detectorPoint)
-                addPoint(objPoint)
-                color = Color.parseColor("#FF6B6B")
-                width = 3f
-            }
-            mapView.overlays.add(line)
+            mapView.overlays.add(objCircle)
         }
 
         mapView.invalidate()

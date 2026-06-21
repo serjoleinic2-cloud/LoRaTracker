@@ -1,13 +1,12 @@
 package com.sergey.loratracker.data
 
-class Inmp441SoundDetector(
-    private val detectionRadiusMeters: Float = 5f,
-    private val centroidRatioThreshold: Float = 2.0f,
-    private val minPeakFreq: Float = 80f,
-    private val maxPeakFreq: Float = 12000f
-) {
-    fun detect(packet: TelemetryPacket, rmsDb: Float = 0f): DetectionResult {
-        if (packet.soundPeakFreq < minPeakFreq || packet.soundPeakFreq > maxPeakFreq) {
+class Inmp441SoundDetector {
+    fun detect(packet: TelemetryPacket, rmsDb: Float = 60f): DetectionResult {
+        val peak = packet.soundPeakFreq
+        val centroid = packet.soundCenterFreq
+        val ratio = packet.soundEnergyRatio
+
+        if (peak < 50f || rmsDb < 25f) {
             return DetectionResult(
                 isObjectNearby = false,
                 confidence = 0f,
@@ -15,49 +14,85 @@ class Inmp441SoundDetector(
                 soundLevel = SoundLevel.SILENT,
                 detectedObject = DetectedObject.UNKNOWN,
                 rmsDb = rmsDb,
-                reason = "Тишина или вне диапазона INMP441"
+                reason = "ТИШИНА"
             )
         }
 
-        val detectedObject = DetectedObject.classify(packet, rmsDb)
-        val ratio = packet.soundEnergyRatio
-
-        return when {
-            ratio > 4.0f && detectedObject != DetectedObject.UNKNOWN -> DetectionResult(
-                isObjectNearby = true,
-                confidence = 1.0f,
-                estimatedRadiusMeters = detectionRadiusMeters,
-                soundLevel = SoundLevel.ALERT,
-                detectedObject = detectedObject,
-                rmsDb = rmsDb,
-                reason = "${detectedObject.emoji} ${detectedObject.displayName} в радиусе ${detectionRadiusMeters.toInt()}м!"
-            )
-            ratio > centroidRatioThreshold && detectedObject != DetectedObject.UNKNOWN -> DetectionResult(
-                isObjectNearby = true,
-                confidence = (ratio / 4.0f).coerceIn(0.5f, 0.9f),
-                estimatedRadiusMeters = detectionRadiusMeters * 1.5f,
-                soundLevel = SoundLevel.HIGH,
-                detectedObject = detectedObject,
-                rmsDb = rmsDb,
-                reason = "${detectedObject.emoji} Обнаружен ${detectedObject.displayName}"
-            )
-            detectedObject != DetectedObject.UNKNOWN -> DetectionResult(
-                isObjectNearby = false,
-                confidence = 0.3f,
-                estimatedRadiusMeters = null,
-                soundLevel = SoundLevel.MEDIUM,
-                detectedObject = detectedObject,
-                rmsDb = rmsDb,
-                reason = "${detectedObject.emoji} Слабый сигнал: ${detectedObject.displayName}"
-            )
-            else -> DetectionResult(
+        if (peak < 200f && ratio > 5f && rmsDb > 55f) {
+            return DetectionResult(
                 isObjectNearby = false,
                 confidence = 0f,
                 estimatedRadiusMeters = null,
                 soundLevel = SoundLevel.LOW,
                 detectedObject = DetectedObject.UNKNOWN,
                 rmsDb = rmsDb,
-                reason = "Фоновый шум"
+                reason = "ВЕТЕР/ДОЖДЬ"
+            )
+        }
+
+        if (peak < 150f && ratio < 1.5f && rmsDb < 45f) {
+            return DetectionResult(
+                isObjectNearby = false,
+                confidence = 0f,
+                estimatedRadiusMeters = null,
+                soundLevel = SoundLevel.LOW,
+                detectedObject = DetectedObject.UNKNOWN,
+                rmsDb = rmsDb,
+                reason = "ГОРОДСКОЙ ФОН"
+            )
+        }
+
+        val obj = DetectedObject.classify(packet, rmsDb)
+        val best = obj.detectedObject
+
+        if (best == DetectedObject.UNKNOWN) {
+            return DetectionResult(
+                isObjectNearby = false,
+                confidence = 0f,
+                estimatedRadiusMeters = null,
+                soundLevel = SoundLevel.MEDIUM,
+                detectedObject = DetectedObject.UNKNOWN,
+                rmsDb = rmsDb,
+                reason = "НЕТ СООТВЕТСТВИЯ"
+            )
+        }
+
+        val excessDb = rmsDb - best.minDb
+        val distance = when {
+            excessDb > 25f -> best.maxDetectionRangeMeters * 0.05f
+            excessDb > 15f -> best.maxDetectionRangeMeters * 0.15f
+            excessDb > 8f -> best.maxDetectionRangeMeters * 0.35f
+            excessDb > 3f -> best.maxDetectionRangeMeters * 0.65f
+            excessDb > 0f -> best.maxDetectionRangeMeters * 0.9f
+            else -> best.maxDetectionRangeMeters
+        }
+
+        val confidence = (ratio / best.centroidMinRatio).coerceAtMost(1.0f)
+        val isDetected = confidence >= 0.7f && excessDb >= -5f
+
+        return if (isDetected) {
+            DetectionResult(
+                isObjectNearby = true,
+                confidence = confidence,
+                estimatedRadiusMeters = distance,
+                soundLevel = when {
+                    excessDb > 15f -> SoundLevel.ALERT
+                    excessDb > 5f -> SoundLevel.HIGH
+                    else -> SoundLevel.MEDIUM
+                },
+                detectedObject = best,
+                rmsDb = rmsDb,
+                reason = "ЦЕЛЬ: ${best.displayName} | ${distance.toInt()}м"
+            )
+        } else {
+            DetectionResult(
+                isObjectNearby = false,
+                confidence = confidence,
+                estimatedRadiusMeters = distance,
+                soundLevel = SoundLevel.MEDIUM,
+                detectedObject = best,
+                rmsDb = rmsDb,
+                reason = "СЛАБЫЙ: ${best.displayName} | ${distance.toInt()}м"
             )
         }
     }

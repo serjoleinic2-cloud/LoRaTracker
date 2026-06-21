@@ -14,7 +14,7 @@ class AudioAnalyzer {
 
     companion object {
         const val SAMPLE_RATE = 44100
-        const val FFT_SIZE = 2048
+        const val FFT_SIZE = 4096
         const val TAG = "AudioAnalyzer"
     }
 
@@ -29,7 +29,7 @@ class AudioAnalyzer {
         )
 
         audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.CAMCORDER,
             SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
@@ -42,6 +42,13 @@ class AudioAnalyzer {
         }
 
         audioRecord?.startRecording()
+
+        try {
+            val noiseSuppressor = android.media.audiofx.NoiseSuppressor.create(audioRecord!!.audioSessionId)
+            noiseSuppressor?.enabled = false
+            Log.d(TAG, "NoiseSuppressor disabled")
+        } catch (_: Exception) {}
+
         isRecording = true
 
         val testBuf = ShortArray(FFT_SIZE)
@@ -141,11 +148,20 @@ class AudioAnalyzer {
         val rms = sqrt(sumSq / buffer.size)
         val db = (20 * log10(rms / 32768.0 + 1e-10)).toFloat()
 
+        val isWind = peakFreq < 200f && db > 50f && centroid > peakFreq * 3
+        val isRain = peakFreq > 8000f && db > 40f && centroid > 10000f
+
+        val filteredPeak = if (isWind || isRain) 0f else peakFreq
+        val filteredCentroid = if (isWind || isRain) 0f else centroid
+
+        if (isWind) Log.d(TAG, "Wind detected, filtering")
+        if (isRain) Log.d(TAG, "Rain detected, filtering")
+
         return AudioFeatures(
-            peakFreq = peakFreq.coerceIn(50f, 20000f),
-            centroidFreq = centroid.coerceIn(100f, 20000f),
+            peakFreq = filteredPeak.coerceIn(50f, 20000f),
+            centroidFreq = filteredCentroid.coerceIn(100f, 20000f),
             rmsDb = db,
-            energyRatio = if (peakFreq > 0) (centroid / peakFreq).coerceAtLeast(0.1f) else 0.1f
+            energyRatio = if (filteredPeak > 0) (filteredCentroid / filteredPeak).coerceAtLeast(0.1f) else 0.1f
         )
     }
 
