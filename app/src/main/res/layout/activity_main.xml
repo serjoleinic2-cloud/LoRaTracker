@@ -190,6 +190,18 @@
                 android:textSize="12sp"
                 app:cornerRadius="8dp" />
 
+            <Button
+                android:id="@+id/showLogsButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="ЛОГИ" />
+
+            <Button
+                android:id="@+id/shareLogsButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="ОТПРАВИТЬ ЛОГИ" />
+
         </LinearLayout>
     </ScrollView>
 

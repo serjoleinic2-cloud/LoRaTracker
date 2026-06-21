@@ -68,6 +68,8 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
     
     override fun onCreate() {
         super.onCreate()
+        FileLogger.init(this)
+        FileLogger.d(TAG, "Service onCreate")
         createNotificationChannel()
     }
     
@@ -81,9 +83,9 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
         val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
         val deviceList = usbManager.deviceList
 
-        Log.d(TAG, "All USB devices: ${deviceList.size}")
+        FileLogger.d(TAG, "All USB devices: ${deviceList.size}")
         for ((name, device) in deviceList) {
-            Log.d(TAG, "Device: $name, VID=${device.vendorId}, PID=${device.productId}")
+            FileLogger.d(TAG, "Device: $name, VID=${device.vendorId}, PID=${device.productId}")
         }
 
         // Ищем ESP32-C3 (VID 0x303A = 12346, PID 0x1001 = 4097)
@@ -92,7 +94,7 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
         }
 
         if (espDevice != null) {
-            Log.d(TAG, "Found ESP32-C3! Connecting...")
+            FileLogger.d(TAG, "Found ESP32-C3! Connecting...")
             connectToEsp32C3(espDevice)
             return
         }
@@ -100,26 +102,26 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
         // Fallback: стандартные драйверы
         val availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
 
-        Log.d(TAG, "Found ${availableDrivers.size} serial drivers")
+        FileLogger.d(TAG, "Found ${availableDrivers.size} serial drivers")
 
         if (availableDrivers.isEmpty()) {
-            Log.e(TAG, "No USB serial devices found")
+            FileLogger.e(TAG, "No USB serial devices found")
             _connectionState.tryEmit(false)
             return
         }
 
         val driver = availableDrivers.first()
-        Log.d(TAG, "Using driver: ${driver.device.deviceName}")
+        FileLogger.d(TAG, "Using driver: ${driver.device.deviceName}")
         val connection = usbManager.openDevice(driver.device)
         
         if (connection == null) {
-            Log.e(TAG, "Cannot open USB device - permission denied?")
+            FileLogger.e(TAG, "Cannot open USB device - permission denied?")
             return
         }
         
         val port = driver.ports.firstOrNull()
         if (port == null) {
-            Log.e(TAG, "No serial ports available")
+            FileLogger.e(TAG, "No serial ports available")
             return
         }
         
@@ -141,10 +143,10 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
             }
             
             _connectionState.tryEmit(true)
-            Log.i(TAG, "Connected to ${driver.device.deviceName}")
+            FileLogger.write("I/$TAG: Connected to ${driver.device.deviceName}")
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error opening port", e)
+            FileLogger.e(TAG, "Error opening port", e)
             _connectionState.tryEmit(false)
         }
     }
@@ -158,14 +160,14 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
         if (driver != null) {
             val connection = usbManager.openDevice(device)
             if (connection == null) {
-                Log.e(TAG, "Cannot open ESP32-C3")
+                FileLogger.e(TAG, "Cannot open ESP32-C3")
                 _connectionState.tryEmit(false)
                 return
             }
 
             val port = driver.ports.firstOrNull()
             if (port == null) {
-                Log.e(TAG, "No serial ports on ESP32-C3")
+                FileLogger.e(TAG, "No serial ports on ESP32-C3")
                 connection.close()
                 _connectionState.tryEmit(false)
                 return
@@ -189,10 +191,10 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
                 }
 
                 _connectionState.tryEmit(true)
-                Log.i(TAG, "ESP32-C3 connected via CDC-ACM")
+                FileLogger.write("I/$TAG: ESP32-C3 connected via CDC-ACM")
 
             } catch (e: Exception) {
-                Log.e(TAG, "Error opening ESP32-C3 port", e)
+                FileLogger.e(TAG, "Error opening ESP32-C3 port", e)
                 _connectionState.tryEmit(false)
             }
         } else {
@@ -205,7 +207,7 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
         val connection = usbManager.openDevice(device)
 
         if (connection == null) {
-            Log.e(TAG, "Cannot open ESP32-C3 for raw USB")
+            FileLogger.e(TAG, "Cannot open ESP32-C3 for raw USB")
             _connectionState.tryEmit(false)
             return
         }
@@ -216,7 +218,7 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
         val inEndpoint = usbInterface.getEndpoint(1)
 
         _connectionState.tryEmit(true)
-        Log.i(TAG, "ESP32-C3 connected, starting read loop")
+        FileLogger.write("I/$TAG: ESP32-C3 connected, starting read loop")
 
         Thread {
             val buffer = ByteArray(4096)
@@ -229,27 +231,27 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
                     val bytesRead = connection.bulkTransfer(inEndpoint, buffer, buffer.size, 2000)
 
                     if (loopCount % 10 == 0) {
-                        Log.d(TAG, "Read loop #$loopCount, lastRead=$bytesRead, total=$totalBytes")
+                        FileLogger.d(TAG, "Read loop #$loopCount, lastRead=$bytesRead, total=$totalBytes")
                     }
 
                     if (bytesRead > 0) {
                         totalBytes += bytesRead
-                        Log.d(TAG, "READ $bytesRead bytes, total=$totalBytes")
+                        FileLogger.d(TAG, "READ $bytesRead bytes, total=$totalBytes")
                         val data = buffer.copyOf(bytesRead)
                         onNewData(data)
                     } else if (bytesRead == 0) {
                         // Таймаут, нормально
                     } else {
-                        Log.e(TAG, "READ ERROR: $bytesRead")
+                        FileLogger.e(TAG, "READ ERROR: $bytesRead")
                         break
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "EXCEPTION: ${e.message}")
+                    FileLogger.e(TAG, "EXCEPTION: ${e.message}")
                     break
                 }
             }
 
-            Log.i(TAG, "Read loop ended, total=$totalBytes bytes")
+            FileLogger.write("I/$TAG: Read loop ended, total=$totalBytes bytes")
             connection.releaseInterface(usbInterface)
             connection.close()
             _connectionState.tryEmit(false)
@@ -257,32 +259,32 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
     }
     
     override fun onNewData(data: ByteArray?) {
-        Log.d(TAG, "onNewData called, data=${data?.size ?: "null"} bytes")
+        FileLogger.d(TAG, "onNewData called, data=${data?.size ?: "null"} bytes")
         if (data == null || data.isEmpty()) {
-            Log.w(TAG, "onNewData: empty or null data")
+            FileLogger.w(TAG, "onNewData: empty or null data")
             return
         }
 
         val raw = String(data, Charsets.UTF_8)
-        Log.d(TAG, "RAW: [$raw]")
+        FileLogger.d(TAG, "RAW: [$raw]")
 
         lineBuffer.append(raw)
-        Log.d(TAG, "Buffer size: ${lineBuffer.length}")
+        FileLogger.d(TAG, "Buffer size: ${lineBuffer.length}")
 
         var newlineIndex: Int
         while (lineBuffer.indexOf("\n").also { newlineIndex = it } != -1) {
             val line = lineBuffer.substring(0, newlineIndex).trim().removeSuffix("\r")
             lineBuffer.delete(0, newlineIndex + 1)
 
-            Log.d(TAG, "LINE: [$line]")
+            FileLogger.d(TAG, "LINE: [$line]")
 
             if (line.isNotEmpty()) {
                 val parseResult = PacketParser.parse(line)
-                Log.d(TAG, "PARSE RESULT for [$line]: ${if (parseResult != null) "OK" else "FAILED"}")
+                FileLogger.d(TAG, "PARSE RESULT for [$line]: ${if (parseResult != null) "OK" else "FAILED"}")
                 parseResult?.let { (packet, _) ->
-                    Log.d(TAG, "PARSED OK: delay=${packet.delayMs}")
+                    FileLogger.d(TAG, "PARSED OK: delay=${packet.delayMs}")
                     val emitted = _packetFlow.tryEmit(packet)
-                    Log.d(TAG, "EMITTED: $emitted")
+                    FileLogger.d(TAG, "EMITTED: $emitted")
                     lastPacket = packet
                     listeners.forEach { it(packet) }
                 }
@@ -291,7 +293,7 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
     }
     
     override fun onRunError(e: Exception?) {
-        Log.e(TAG, "Serial error", e)
+        FileLogger.e(TAG, "Serial error", e)
         _connectionState.tryEmit(false)
     }
     

@@ -23,6 +23,7 @@ import com.sergey.loratracker.data.PacketParser
 import com.sergey.loratracker.data.SoundLevel
 import com.sergey.loratracker.data.TelemetryPacket
 import com.sergey.loratracker.databinding.ActivityMainBinding
+import com.sergey.loratracker.service.FileLogger
 import com.sergey.loratracker.service.UsbSerialService
 import com.sergey.loratracker.viewmodel.TrackerViewModel
 import kotlinx.coroutines.launch
@@ -54,6 +55,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        FileLogger.init(this)
+        FileLogger.d("MAIN", "MainActivity onCreate")
 
         val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val networkInfo = connectivityManager.activeNetworkInfo
@@ -105,44 +109,63 @@ class MainActivity : AppCompatActivity() {
         binding.testModeButton.visibility = View.GONE
         binding.usbConnectButton.setOnClickListener { checkUsbDevices() }
 
+        binding.showLogsButton.setOnClickListener {
+            val dir = File(getExternalFilesDir(null), "lora_logs")
+            val files = dir.listFiles()?.sortedByDescending { it.lastModified() }
+            val latest = files?.firstOrNull()
+            binding.statusText.text = if (latest != null) {
+                val content = latest.readText().lines().takeLast(30).joinToString("\n")
+                "LOG: ${latest.name}\n\n$content"
+            } else {
+                "Нет логов"
+            }
+        }
+
+        binding.shareLogsButton.setOnClickListener {
+            val dir = File(getExternalFilesDir(null), "lora_logs")
+            val files = dir.listFiles()?.sortedByDescending { it.lastModified() }
+            val latest = files?.firstOrNull()
+            if (latest != null) {
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    this,
+                    "${packageName}.fileprovider",
+                    latest
+                )
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(intent, "Отправить логи"))
+            } else {
+                binding.statusText.text = "Нет логов для отправки"
+            }
+        }
+
         val parserWorks = PacketParser.testParse()
         Log.d("MAIN", "Parser test: $parserWorks")
 
-        lifecycleScope.launch {
-            viewModel.packet.collect { packet ->
-                packet?.let { updateUI(it) }
-            }
-        }
-
         startUsbService()
         observeData()
-
-        UsbSerialService.addListener { packet ->
-            runOnUiThread {
-                Log.d("MAIN", "Listener got packet: ${packet.delayMs}")
-                updateUI(packet)
-            }
-        }
     }
 
     private fun observeData() {
-        Log.d("MAIN", "observeData started")
+        FileLogger.d("MAIN", "observeData started")
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                Log.d("MAIN", "Lifecycle STARTED, collecting...")
+                FileLogger.d("MAIN", "Lifecycle STARTED")
 
                 launch {
-                    Log.d("MAIN", "Starting packetFlow collect")
                     UsbSerialService.packetFlow.collect { packet ->
-                        Log.d("MAIN", "COLLECTED: delay=${packet.delayMs}, peak=${packet.soundPeakFreq}")
+                        FileLogger.d("MAIN", "packetFlow: delay=${packet.delayMs}")
                         if (!isTestMode) updateUI(packet)
                     }
                 }
 
                 launch {
                     UsbSerialService.connectionState.collect { connected ->
-                        Log.d("MAIN", "Connection state: $connected")
+                        FileLogger.d("MAIN", "connectionState: $connected")
                         if (!isTestMode) updateConnectionStatus(connected)
                     }
                 }
@@ -151,12 +174,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUI(packet: TelemetryPacket) {
-        Log.d("UI", "updateUI called, delay=${packet.delayMs}")
+        FileLogger.d("UI", "updateUI: delay=${packet.delayMs}")
 
-        binding.statusText.post {
-            binding.statusText.text = "ID: ${packet.delayMs}"
-            Log.d("UI", "Status updated")
+        val text = buildString {
+            appendLine("ID: ${packet.delayMs}")
+            appendLine("Спутников: ${packet.gpsSats}")
+            appendLine("Lat: ${packet.latitude}")
+            appendLine("Lon: ${packet.longitude}")
+            appendLine("Темп: ${packet.temperature}°C")
+            appendLine("Пик: ${packet.soundPeakFreq}Hz")
+            appendLine("Centroid: ${packet.soundCenterFreq}Hz")
+            appendLine("RSSI: ${packet.rssi}")
         }
+
+        binding.statusText.text = text
+        binding.statusText.invalidate()
+        binding.statusText.requestLayout()
+        FileLogger.d("UI", "statusText SET")
     }
 
     private fun updateConnectionStatus(connected: Boolean) {
@@ -206,6 +240,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkUsbDevices() {
         val deviceList = usbManager.deviceList
+        FileLogger.d("MAIN", "checkUsbDevices: ${deviceList.size} devices")
         Log.d("USB", "Found ${deviceList.size} USB devices")
 
         if (deviceList.isEmpty()) {
