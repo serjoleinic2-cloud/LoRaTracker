@@ -133,7 +133,9 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
                 UsbSerialPort.STOPBITS_1,
                 UsbSerialPort.PARITY_NONE
             )
-            
+            port.setDTR(true)
+            port.setRTS(true)
+
             serialIoManager = SerialInputOutputManager(port, this).apply {
                 start()
             }
@@ -179,6 +181,8 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
                     UsbSerialPort.STOPBITS_1,
                     UsbSerialPort.PARITY_NONE
                 )
+                port.setDTR(true)
+                port.setRTS(true)
 
                 serialIoManager = SerialInputOutputManager(port, this).apply {
                     start()
@@ -264,19 +268,21 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
 
         var newlineIndex: Int
         while (lineBuffer.indexOf("\n").also { newlineIndex = it } != -1) {
-            val line = lineBuffer.substring(0, newlineIndex).trim()
+            val line = lineBuffer.substring(0, newlineIndex).trim().removeSuffix("\r")
             lineBuffer.delete(0, newlineIndex + 1)
 
             Log.d(TAG, "LINE: [$line]")
 
             if (line.isNotEmpty()) {
-                PacketParser.parse(line)?.let { (packet, _) ->
+                val parseResult = PacketParser.parse(line)
+                Log.d(TAG, "PARSE RESULT for [$line]: ${if (parseResult != null) "OK" else "FAILED"}")
+                parseResult?.let { (packet, _) ->
                     Log.d(TAG, "PARSED OK: delay=${packet.delayMs}")
                     val emitted = _packetFlow.tryEmit(packet)
                     Log.d(TAG, "EMITTED: $emitted")
                     lastPacket = packet
                     listeners.forEach { it(packet) }
-                } ?: Log.d(TAG, "PARSE FAILED: [$line]")
+                }
             }
         }
     }
