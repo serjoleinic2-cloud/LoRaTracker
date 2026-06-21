@@ -283,6 +283,13 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
                 FileLogger.d(TAG, "PARSE RESULT for [$line]: ${if (parseResult != null) "OK" else "FAILED"}")
                 parseResult?.let { (packet, _) ->
                     FileLogger.d(TAG, "PARSED OK: delay=${packet.delayMs}")
+                    FileLogger.d("LORA", "PACKET: peak=${packet.soundPeakFreq} centroid=${packet.soundCenterFreq} ratio=${packet.soundEnergyRatio}")
+                    FileLogger.d("LORA_RAW", "peak=${packet.soundPeakFreq.toInt()} centroid=${packet.soundCenterFreq.toInt()} ratio=${"%.2f".format(packet.soundEnergyRatio)}")
+                    if (packet.soundPeakFreq > 4000f) {
+                        FileLogger.d("HIGH_FREQ", "FOUND: peak=${packet.soundPeakFreq.toInt()}Hz")
+                    } else {
+                        FileLogger.d("LOW_FREQ", "peak=${packet.soundPeakFreq.toInt()}Hz, no high freq")
+                    }
                     val emitted = _packetFlow.tryEmit(packet)
                     FileLogger.d(TAG, "EMITTED: $emitted")
                     lastPacket = packet

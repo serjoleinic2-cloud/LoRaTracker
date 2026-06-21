@@ -29,7 +29,7 @@ class TrackerViewModel : ViewModel() {
             UsbSerialService.packetFlow.collect { p ->
                 FileLogger.d("VM", "packetFlow: delay=${p.delayMs}, peak=${p.soundPeakFreq}")
                 _packet.value = p
-                val det = soundDetector.detect(p, p.rssi.toFloat() + 100f)
+                val det = soundDetector.detect(p)
                 FileLogger.d("VM", "detected: ${det.detectedObject.displayName}, dist=${det.estimatedRadiusMeters}, conf=${det.confidence}")
                 _detection.value = det
             }

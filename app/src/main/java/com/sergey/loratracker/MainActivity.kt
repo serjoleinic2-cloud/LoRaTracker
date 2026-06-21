@@ -44,6 +44,11 @@ class MainActivity : AppCompatActivity() {
     private var lastPeakFreq = 0f
     private var lastCenterFreq = 0f
     private var stableCount = 0
+    private var lastMapUpdate = 0L
+    private val MAP_UPDATE_INTERVAL_MS = 4000L
+    private var lastGpsPoint: GeoPoint? = null
+    private var gpsJumpCount = 0
+    private var fixedDetectorPoint: GeoPoint? = null
     private var pendingUsbIntent: PendingIntent? = null
     private var isTestMode = false
 
@@ -177,8 +182,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUI(packet: TelemetryPacket) {
+        FileLogger.d("AUDIO", "peak=${packet.soundPeakFreq}Hz centroid=${packet.soundCenterFreq}Hz ratio=${packet.soundEnergyRatio} sat=${packet.gpsSats}")
         runOnUiThread {
             binding.gpsStatus.text = "GPS: ${packet.gpsSats} спутн."
+            val currentPoint = GeoPoint(packet.latitude, packet.longitude)
+            if (lastGpsPoint != null) {
+                val dist = currentPoint.distanceToAsDouble(lastGpsPoint).toFloat()
+                if (dist > 100f) {
+                    gpsJumpCount++
+                    if (gpsJumpCount > 3) {
+                        binding.gpsStatus.text = "GPS: ГЛУШИТСЯ!"
+                        binding.gpsStatus.setTextColor(android.graphics.Color.parseColor("#FF0000"))
+                    }
+                } else {
+                    gpsJumpCount = 0
+                    binding.gpsStatus.setTextColor(android.graphics.Color.parseColor("#BBBBBB"))
+                }
+            }
+            lastGpsPoint = currentPoint
             binding.tempText.text = "Темп: ${packet.temperature}°C"
             binding.rssiText.text = "RSSI: ${packet.rssi} dBm"
             binding.peakFreqText.text = "Пик: ${packet.soundPeakFreq}Hz"
@@ -226,6 +247,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMap(packet: TelemetryPacket, detection: DetectionResult) {
+        val now = System.currentTimeMillis()
+        if (now - lastMapUpdate < MAP_UPDATE_INTERVAL_MS) {
+            return
+        }
+        lastMapUpdate = now
+
         if (!packet.isGpsValid) {
             FileLogger.d("MAP", "GPS invalid, skip map update")
             return
@@ -234,10 +261,17 @@ class MainActivity : AppCompatActivity() {
         val detectorPoint = GeoPoint(packet.latitude, packet.longitude)
 
         runOnUiThread {
+            val displayPoint = if (gpsJumpCount > 3 && fixedDetectorPoint != null) {
+                fixedDetectorPoint
+            } else {
+                fixedDetectorPoint = detectorPoint
+                detectorPoint
+            }
+
             mapView.overlays.clear()
 
             val detectorMarker = Marker(mapView).apply {
-                position = detectorPoint
+                position = displayPoint
                 title = "📡 ДЕТЕКТОР"
                 snippet = "ID: ${packet.delayMs}\nRSSI: ${packet.rssi}"
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
@@ -248,7 +282,7 @@ class MainActivity : AppCompatActivity() {
             val maxRange = detection.detectedObject.maxDetectionRangeMeters
             if (maxRange > 0) {
                 val rangeCircle = Polygon().apply {
-                    points = Polygon.pointsAsCircle(detectorPoint, maxRange.toDouble())
+                    points = Polygon.pointsAsCircle(displayPoint!!, maxRange.toDouble())
                     fillColor = 0x154CAF50
                     strokeColor = 0xFF4CAF50.toInt()
                     strokeWidth = 2f
@@ -272,7 +306,7 @@ class MainActivity : AppCompatActivity() {
                 mapView.overlays.add(objMarker)
 
                 val line = Polyline().apply {
-                    addPoint(detectorPoint)
+                    addPoint(displayPoint!!)
                     addPoint(objPoint)
                     color = android.graphics.Color.parseColor("#FF0000")
                     width = 3f
@@ -280,7 +314,7 @@ class MainActivity : AppCompatActivity() {
                 mapView.overlays.add(line)
 
                 val objCircle = Polygon().apply {
-                    points = Polygon.pointsAsCircle(detectorPoint, dist.toDouble())
+                    points = Polygon.pointsAsCircle(displayPoint!!, dist.toDouble())
                     fillColor = 0x11FF0000
                     strokeColor = 0xFFFF0000.toInt()
                     strokeWidth = 2f
@@ -289,7 +323,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             mapView.invalidate()
-            mapView.controller.animateTo(detectorPoint)
+            mapView.controller.animateTo(displayPoint!!)
             FileLogger.d("MAP", "Updated: detector at ${packet.latitude},${packet.longitude}, obj=${detection.detectedObject.displayName}")
         }
     }
