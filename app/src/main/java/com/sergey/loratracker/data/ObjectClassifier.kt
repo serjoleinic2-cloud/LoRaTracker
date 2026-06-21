@@ -9,7 +9,7 @@ enum class DetectedObject(
     val maxDetectionRangeMeters: Float,
     val description: String
 ) {
-    HUMAN("Человек", "\uD83D\uDEB6", 85f..350f, 1.2f, 35f, 50f, "Голос, шаги"),
+    HUMAN("Человек", "\uD83D\uDEB6", 85f..350f, 1.0f, 25f, 50f, "Голос, шаги"),
     GROUP("Группа", "\uD83D\uDC65", 150f..500f, 2.0f, 50f, 80f, "Несколько человек"),
     CAR("Легковая", "\uD83D\uDE97", 200f..1500f, 2.0f, 55f, 150f, "Двигатель"),
     TRUCK("Грузовик", "\uD83D\uDE9A", 80f..800f, 1.8f, 65f, 300f, "Дизель"),
@@ -25,7 +25,6 @@ enum class DetectedObject(
     companion object {
         fun classify(packet: TelemetryPacket, rmsDb: Float = 60f): DetectionResult {
             val peak = packet.soundPeakFreq
-            val centroid = packet.soundCenterFreq
             val ratio = packet.soundEnergyRatio
 
             if (peak < 50f || rmsDb < 30f) {
@@ -34,6 +33,18 @@ enum class DetectedObject(
 
             if (peak < 150f && ratio < 1.5f && rmsDb < 45f) {
                 return DetectionResult(false, 0f, null, SoundLevel.LOW, UNKNOWN, rmsDb, "Городской фон")
+            }
+
+            if (peak in 85f..350f && ratio >= 1.0f && rmsDb >= 25f) {
+                return DetectionResult(
+                    isObjectNearby = true,
+                    confidence = (ratio / 1.0f).coerceAtMost(1.0f),
+                    estimatedRadiusMeters = 50f * (rmsDb / 25f),
+                    soundLevel = if (rmsDb > 40f) SoundLevel.HIGH else SoundLevel.MEDIUM,
+                    detectedObject = HUMAN,
+                    rmsDb = rmsDb,
+                    reason = "ЦЕЛЬ: Человек | голос/шаги"
+                )
             }
 
             val candidates = values().filter { it != UNKNOWN && peak in it.peakFreqRange }

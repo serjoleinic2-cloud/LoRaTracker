@@ -15,51 +15,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/statusCard"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="48dp"
-        android:layout_marginEnd="16dp"
-        app:cardBackgroundColor="#E53935"
-        app:cardCornerRadius="12dp"
-        app:layout_constraintEnd_toStartOf="@id/infoPanel"
-        app:layout_constraintTop_toTopOf="parent">
-
-        <TextView
-            android:id="@+id/statusText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:padding="10dp"
-            android:text="НЕТ ПОДКЛЮЧЕНИЯ"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-    </com.google.android.material.card.MaterialCardView>
-
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/alertCard"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_margin="8dp"
-        android:visibility="gone"
-        app:cardBackgroundColor="#FF9800"
-        app:cardCornerRadius="8dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/infoPanel"
-        app:layout_constraintStart_toStartOf="parent">
-
-        <TextView
-            android:id="@+id/alertText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:padding="8dp"
-            android:text=""
-            android:textColor="#FFFFFF"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-    </com.google.android.material.card.MaterialCardView>
-
     <ScrollView
         android:id="@+id/infoPanel"
         android:layout_width="280dp"
@@ -101,6 +56,17 @@
                 android:text=""
                 android:textColor="#AAAAAA"
                 android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/usbStatusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="USB: --"
+                android:textColor="#4CAF50"
+                android:textSize="12sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/distanceText"

@@ -5,7 +5,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Color
 import android.hardware.usb.UsbManager
 import android.net.ConnectivityManager
 import android.os.Build
@@ -18,9 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.sergey.loratracker.data.DetectedObject
 import com.sergey.loratracker.data.DetectionResult
-import com.sergey.loratracker.data.Inmp441SoundDetector
 import com.sergey.loratracker.data.PacketParser
-import com.sergey.loratracker.data.SoundLevel
 import com.sergey.loratracker.data.TelemetryPacket
 import com.sergey.loratracker.databinding.ActivityMainBinding
 import com.sergey.loratracker.service.FileLogger
@@ -64,7 +61,7 @@ class MainActivity : AppCompatActivity() {
         Log.d("MAIN", "Internet: $isOnline")
 
         if (!isOnline) {
-            binding.statusText.text = "НЕТ ИНТЕРНЕТА"
+            binding.usbStatusText.text = "НЕТ ИНТЕРНЕТА"
         }
 
         val osmPath = File(filesDir, "osmdroid")
@@ -112,7 +109,7 @@ class MainActivity : AppCompatActivity() {
             val dir = File(getExternalFilesDir(null), "lora_logs")
             val files = dir.listFiles()?.sortedByDescending { it.lastModified() }
             val latest = files?.firstOrNull()
-            binding.statusText.text = if (latest != null) {
+            binding.usbStatusText.text = if (latest != null) {
                 val content = latest.readText().lines().takeLast(30).joinToString("\n")
                 "LOG: ${latest.name}\n\n$content"
             } else {
@@ -137,7 +134,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 startActivity(Intent.createChooser(intent, "Отправить логи"))
             } else {
-                binding.statusText.text = "Нет логов для отправки"
+                binding.usbStatusText.text = "Нет логов для отправки"
             }
         }
 
@@ -153,19 +150,26 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                FileLogger.d("MAIN", "Lifecycle STARTED")
-
                 launch {
-                    UsbSerialService.packetFlow.collect { packet ->
-                        FileLogger.d("MAIN", "packetFlow: delay=${packet.delayMs}")
-                        if (!isTestMode) updateUI(packet)
+                    viewModel.packet.collect { packet ->
+                        packet?.let {
+                            FileLogger.d("MAIN", "viewModel packet: ${it.delayMs}")
+                            updateUI(it)
+                        }
                     }
                 }
-
                 launch {
-                    UsbSerialService.connectionState.collect { connected ->
-                        FileLogger.d("MAIN", "connectionState: $connected")
-                        if (!isTestMode) updateConnectionStatus(connected)
+                    viewModel.detection.collect { detection ->
+                        detection?.let {
+                            FileLogger.d("MAIN", "viewModel detection: ${it.detectedObject.displayName}")
+                            if (!isTestMode) updateDetectionUI(it)
+                        }
+                    }
+                }
+                launch {
+                    viewModel.connected.collect { connected ->
+                        FileLogger.d("MAIN", "viewModel connected: $connected")
+                        updateConnectionStatus(connected)
                     }
                 }
             }
@@ -173,76 +177,121 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUI(packet: TelemetryPacket) {
-        val detection = Inmp441SoundDetector().detect(packet, packet.rssi.toFloat() + 100f)
-        FileLogger.d("DETECT", "peak=${packet.soundPeakFreq}Hz ratio=${packet.soundEnergyRatio} obj=${detection.detectedObject.displayName} dist=${detection.estimatedRadiusMeters}m conf=${detection.confidence}")
-
         runOnUiThread {
             binding.gpsStatus.text = "GPS: ${packet.gpsSats} спутн."
             binding.tempText.text = "Темп: ${packet.temperature}°C"
             binding.rssiText.text = "RSSI: ${packet.rssi} dBm"
             binding.peakFreqText.text = "Пик: ${packet.soundPeakFreq}Hz"
             binding.centroidText.text = "Центр: ${packet.soundCenterFreq}Hz"
-            binding.maxRangeText.text = "Дальность: ${detection.detectedObject.maxDetectionRangeMeters}м"
 
-            if (detection.isObjectNearby && detection.detectedObject != DetectedObject.UNKNOWN) {
-                binding.objectEmoji.text = detection.detectedObject.emoji
-                binding.objectName.text = detection.detectedObject.displayName.uppercase()
-                binding.objectDescription.text = detection.reason
-                binding.distanceText.text = "Расстояние: ${detection.estimatedRadiusMeters?.toInt() ?: "?"}м"
-                binding.distanceText.visibility = View.VISIBLE
+            val maxRange = DetectedObject.values()
+                .filter { it != DetectedObject.UNKNOWN && packet.soundPeakFreq in it.peakFreqRange }
+                .maxByOrNull { it.maxDetectionRangeMeters }
+            binding.maxRangeText.text = "Дальность: ${maxRange?.maxDetectionRangeMeters ?: 0}м"
+        }
+    }
 
-                binding.alertCard.visibility = View.VISIBLE
-                binding.alertText.text = "⚠ ОБНАРУЖЕНО: ${detection.detectedObject.displayName.uppercase()}"
-
-                updateMap(packet, detection)
+    private fun updateDetectionUI(detection: DetectionResult) {
+        runOnUiThread {
+            binding.objectEmoji.text = detection.detectedObject.emoji
+            binding.objectName.text = if (detection.isObjectNearby) {
+                detection.detectedObject.displayName.uppercase()
             } else {
-                binding.objectEmoji.text = "\uD83D\uDD0B"
-                binding.objectName.text = "ПАТРУЛИРОВАНИЕ"
-                binding.objectDescription.text = "Сканирование..."
+                "ПАТРУЛИРОВАНИЕ"
+            }
+            binding.objectDescription.text = detection.reason
+
+            if (detection.isObjectNearby && detection.estimatedRadiusMeters != null) {
+                binding.distanceText.text = "${detection.estimatedRadiusMeters.toInt()}м"
+                binding.distanceText.visibility = View.VISIBLE
+            } else {
                 binding.distanceText.visibility = View.GONE
-                binding.alertCard.visibility = View.GONE
+            }
+
+            val packet = viewModel.packet.value
+            if (packet != null && packet.isGpsValid) {
+                updateMap(packet, detection)
             }
         }
     }
 
     private fun updateConnectionStatus(connected: Boolean) {
-        binding.statusText.text = if (connected) "USB: ПОДКЛЮЧЕНО" else "USB: ОТКЛЮЧЕНО"
+        runOnUiThread {
+            binding.usbStatusText.text = if (connected) "USB: ПОДКЛЮЧЕНО" else "USB: ОТКЛЮЧЕНО"
+            binding.usbStatusText.setTextColor(
+                if (connected) android.graphics.Color.parseColor("#4CAF50")
+                else android.graphics.Color.parseColor("#F44336")
+            )
+        }
     }
 
     private fun updateMap(packet: TelemetryPacket, detection: DetectionResult) {
+        if (!packet.isGpsValid) {
+            FileLogger.d("MAP", "GPS invalid, skip map update")
+            return
+        }
+
         val detectorPoint = GeoPoint(packet.latitude, packet.longitude)
-        mapView.overlays.clear()
 
-        val detectorMarker = Marker(mapView).apply {
-            position = detectorPoint
-            title = "📡 ВЫ"
-            snippet = "ID: ${packet.delayMs}"
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-        }
-        mapView.overlays.add(detectorMarker)
+        runOnUiThread {
+            mapView.overlays.clear()
 
-        val maxRange = detection.detectedObject.maxDetectionRangeMeters
-        val rangeCircle = Polygon().apply {
-            points = Polygon.pointsAsCircle(detectorPoint, maxRange.toDouble())
-            fillColor = 0x154CAF50
-            strokeColor = 0xFF4CAF50.toInt()
-            strokeWidth = 2f
-        }
-        mapView.overlays.add(rangeCircle)
-
-        if (detection.isObjectNearby && detection.estimatedRadiusMeters != null) {
-            val objRange = detection.estimatedRadiusMeters!!
-            val objCircle = Polygon().apply {
-                points = Polygon.pointsAsCircle(detectorPoint, objRange.toDouble())
-                fillColor = 0x22FF0000
-                strokeColor = 0xFFFF0000.toInt()
-                strokeWidth = 3f
+            val detectorMarker = Marker(mapView).apply {
+                position = detectorPoint
+                title = "📡 ДЕТЕКТОР"
+                snippet = "ID: ${packet.delayMs}\nRSSI: ${packet.rssi}"
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                icon = resources.getDrawable(android.R.drawable.ic_menu_mylocation, null)
             }
-            mapView.overlays.add(objCircle)
-        }
+            mapView.overlays.add(detectorMarker)
 
-        mapView.invalidate()
-        mapView.controller.animateTo(detectorPoint)
+            val maxRange = detection.detectedObject.maxDetectionRangeMeters
+            if (maxRange > 0) {
+                val rangeCircle = Polygon().apply {
+                    points = Polygon.pointsAsCircle(detectorPoint, maxRange.toDouble())
+                    fillColor = 0x154CAF50
+                    strokeColor = 0xFF4CAF50.toInt()
+                    strokeWidth = 2f
+                }
+                mapView.overlays.add(rangeCircle)
+            }
+
+            if (detection.isObjectNearby && detection.estimatedRadiusMeters != null) {
+                val dist = detection.estimatedRadiusMeters!!
+                val angle = (packet.delayMs % 360).toDouble()
+                val objLat = packet.latitude + kotlin.math.cos(Math.toRadians(angle)) * dist * 0.00001
+                val objLon = packet.longitude + kotlin.math.sin(Math.toRadians(angle)) * dist * 0.00001
+                val objPoint = GeoPoint(objLat, objLon)
+
+                val objMarker = Marker(mapView).apply {
+                    position = objPoint
+                    title = "${detection.detectedObject.emoji} ${detection.detectedObject.displayName}"
+                    snippet = "Расстояние: ${dist.toInt()}м\nУверенность: ${(detection.confidence * 100).toInt()}%"
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                }
+                mapView.overlays.add(objMarker)
+
+                val line = Polyline().apply {
+                    addPoint(detectorPoint)
+                    addPoint(objPoint)
+                    color = android.graphics.Color.parseColor("#FF0000")
+                    width = 3f
+                }
+                mapView.overlays.add(line)
+
+                val objCircle = Polygon().apply {
+                    points = Polygon.pointsAsCircle(detectorPoint, dist.toDouble())
+                    fillColor = 0x11FF0000
+                    strokeColor = 0xFFFF0000.toInt()
+                    strokeWidth = 2f
+                }
+                mapView.overlays.add(objCircle)
+            }
+
+            mapView.invalidate()
+            mapView.controller.animateTo(detectorPoint)
+            FileLogger.d("MAP", "Updated: detector at ${packet.latitude},${packet.longitude}, obj=${detection.detectedObject.displayName}")
+        }
     }
 
     private fun checkUsbDevices() {
@@ -251,7 +300,7 @@ class MainActivity : AppCompatActivity() {
         Log.d("USB", "Found ${deviceList.size} USB devices")
 
         if (deviceList.isEmpty()) {
-            binding.statusText.text = "USB: НЕТ УСТРОЙСТВ"
+            binding.usbStatusText.text = "USB: НЕТ УСТРОЙСТВ"
             return
         }
 
@@ -262,17 +311,17 @@ class MainActivity : AppCompatActivity() {
                 Log.d("USB", "Supported serial device found!")
 
                 if (usbManager.hasPermission(device)) {
-                    binding.statusText.text = "USB: ЕСТЬ РАЗРЕШЕНИЕ"
+                    binding.usbStatusText.text = "USB: ЕСТЬ РАЗРЕШЕНИЕ"
                     startUsbService()
                 } else {
-                    binding.statusText.text = "USB: ЗАПРОШЕНО"
+                    binding.usbStatusText.text = "USB: ЗАПРОШЕНО"
                     usbManager.requestPermission(device, pendingUsbIntent)
                 }
                 return
             }
         }
 
-        binding.statusText.text = "USB: НЕТ ПОДХОДЯЩИХ"
+        binding.usbStatusText.text = "USB: НЕТ ПОДХОДЯЩИХ"
     }
 
     private fun startUsbService() {
@@ -292,12 +341,12 @@ class MainActivity : AppCompatActivity() {
                     if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
                         device?.let {
                             Log.d("USB", "Permission granted for ${it.deviceName}")
-                            binding.statusText.text = "USB: РАЗРЕШЕНО"
+                            binding.usbStatusText.text = "USB: РАЗРЕШЕНО"
                             startUsbService()
                         }
                     } else {
                         Log.d("USB", "Permission denied")
-                        binding.statusText.text = "USB: ОТКАЗАНО"
+                        binding.usbStatusText.text = "USB: ОТКАЗАНО"
                     }
                 }
             }

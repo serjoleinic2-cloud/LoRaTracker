@@ -18,7 +18,7 @@ object TestDataGenerator {
         DetectedObject.TRUCK,
         DetectedObject.TANK,
         DetectedObject.DRONE,
-        DetectedObject.MIXED_GROUP
+        DetectedObject.GROUP
     )
 
     private var angle = 0f
@@ -49,7 +49,7 @@ object TestDataGenerator {
                 DetectedObject.TRUCK -> Pair(800f, 2.5f)
                 DetectedObject.TANK -> Pair(600f, 2.8f)
                 DetectedObject.DRONE -> Pair(3000f, 4.0f)
-                DetectedObject.MIXED_GROUP -> Pair(1200f, 3.5f)
+                DetectedObject.GROUP -> Pair(1200f, 3.5f)
                 else -> Pair(50f, 0.5f)
             }
 

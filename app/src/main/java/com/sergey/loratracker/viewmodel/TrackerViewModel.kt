@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.sergey.loratracker.data.DetectionResult
 import com.sergey.loratracker.data.Inmp441SoundDetector
 import com.sergey.loratracker.data.TelemetryPacket
+import com.sergey.loratracker.service.FileLogger
 import com.sergey.loratracker.service.UsbSerialService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,12 +27,18 @@ class TrackerViewModel : ViewModel() {
     init {
         viewModelScope.launch {
             UsbSerialService.packetFlow.collect { p ->
+                FileLogger.d("VM", "packetFlow: delay=${p.delayMs}, peak=${p.soundPeakFreq}")
                 _packet.value = p
-                _detection.value = soundDetector.detect(p)
+                val det = soundDetector.detect(p, p.rssi.toFloat() + 100f)
+                FileLogger.d("VM", "detected: ${det.detectedObject.displayName}, dist=${det.estimatedRadiusMeters}, conf=${det.confidence}")
+                _detection.value = det
             }
         }
         viewModelScope.launch {
-            UsbSerialService.connectionState.collect { _connected.value = it }
+            UsbSerialService.connectionState.collect {
+                FileLogger.d("VM", "connection: $it")
+                _connected.value = it
+            }
         }
     }
 }

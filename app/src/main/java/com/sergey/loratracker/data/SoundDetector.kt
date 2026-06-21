@@ -3,7 +3,6 @@ package com.sergey.loratracker.data
 class Inmp441SoundDetector {
     fun detect(packet: TelemetryPacket, rmsDb: Float = 60f): DetectionResult {
         val peak = packet.soundPeakFreq
-        val centroid = packet.soundCenterFreq
         val ratio = packet.soundEnergyRatio
 
         if (peak < 50f || rmsDb < 25f) {
