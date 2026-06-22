@@ -14,7 +14,7 @@ enum class DetectedObject(
     HUMAN("Человек", "\uD83D\uDEB6", 85f..350f, 0f, 0f, 50f, "Голос"),
     GROUP("Группа", "\uD83D\uDC65", 150f..500f, 0f, 0f, 80f, "Несколько человек"),
     CAR("Легковая", "\uD83D\uDE97", 200f..1500f, 0f, 0f, 150f, "Двигатель"),
-    TRUCK("Грузовик", "\uD83D\uDE9A", 80f..800f, 0f, 0f, 300f, "Дизель"),
+    TRUCK("Грузовик", "\uD83D\uDE9A", 120f..800f, 0f, 0f, 300f, "Дизель"),
     MOTORCYCLE("Мотоцикл", "\uD83C\uDFCD", 1500f..5000f, 0f, 0f, 200f, "Высокие обороты"),
     SCOOTER("Мопед", "\uD83D\uDEF5", 500f..1500f, 0f, 0f, 100f, "Скутер"),
     DRONE("Дрон", "\uD83D\uDE81", 400f..1500f, 0f, 0f, 500f, "Пропеллеры"),
@@ -22,9 +22,9 @@ enum class DetectedObject(
     HELICOPTER("Вертолёт", "\uD83D\uDE81", 500f..3000f, 0f, 0f, 2000f, "Несущий винт"),
     AIRPLANE("Самолёт", "\u2708", 300f..2000f, 0f, 0f, 5000f, "Реактивный"),
     TANK("Танк", "\uD83D\uDEA2", 100f..2000f, 0f, 0f, 1000f, "Гусеницы"),
-    TRACTOR("Трактор", "\uD83D\uDE9C", 80f..200f, 0f, 0f, 300f, "Стройка/трактор"),
+    TRACTOR("Трактор/стройка", "\uD83D\uDE9C", 80f..200f, 0f, 0f, 300f, "Строительная техника"),
     CONSTRUCTION("Стройка", "\uD83C\uDFD7", 80f..500f, 0f, 0f, 200f, "Трактор/стройка"),
-    BICYCLE("Велосипед", "\uD83D\uDEB2", 50f..150f, 0f, 0f, 30f, "Цепь"),
+    BICYCLE("Велосипед", "\uD83D\uDEB2", 50f..120f, 0f, 0f, 30f, "Цепь"),
     LOW_FREQ("Низкочастотный", "\uD83D\uDD0A", 150f..1000f, 0f, 0f, 100f, "Мотор/гул неопределён"),
     UNKNOWN("Фон", "\uD83C\uDF3F", 0f..0f, 0f, 0f, 0f, "Нет сигнала");
 
@@ -32,31 +32,37 @@ enum class DetectedObject(
         fun classify(packet: TelemetryPacket): DetectionResult {
             val peak = packet.soundPeakFreq
             val ratio = packet.soundEnergyRatio
+            val centroid = packet.soundCenterFreq
 
             if (peak < 50f || peak > 20000f) {
                 return DetectionResult(false, 0f, null, SoundLevel.SILENT, UNKNOWN, 0f, "ТИШИНА")
             }
 
-            AdaptiveThreshold.calibrate(ratio)
-            val threshold = if (AdaptiveThreshold.isCalibrated()) {
-                AdaptiveThreshold.getThreshold()
-            } else {
-                1.0f
-            }
+            AdaptiveThreshold.calibrate(ratio, peak)
+            val threshold = AdaptiveThreshold.getThreshold()
+            val noiseFloor = AdaptiveThreshold.getNoiseFloor()
 
-            if (ratio < threshold * 0.8f) {
+            FileLogger.d("DRONE_CHECK", "peak=${peak.toInt()} centroid=${centroid.toInt()} ratio=${"%.2f".format(ratio)} threshold=${"%.2f".format(threshold)} centroid/peak=${"%.2f".format(centroid/peak)}")
+            FileLogger.d("CLASSIFY", "peak=${peak.toInt()} ratio=${"%.2f".format(ratio)} threshold=${"%.2f".format(threshold)} noiseFloor=${"%.2f".format(noiseFloor)} calibrated=${AdaptiveThreshold.isCalibrated()}")
+
+            if (ratio < threshold * 0.6f) {
                 return DetectionResult(false, 0f, null, SoundLevel.LOW, UNKNOWN, 0f, "ФОН")
             }
 
-            if (peak in 400f..1500f && ratio >= threshold * 0.6f) {
+            if (peak < 200f && ratio > threshold * 2.5f) {
+                return DetectionResult(false, 0f, null, SoundLevel.LOW, UNKNOWN, 0f, "ВЕТЕР")
+            }
+
+            if (peak in 400f..1500f && centroid > peak * 1.3f && ratio >= threshold * 0.5f) {
+                val confidence = (ratio / (threshold * 0.5f)).coerceAtMost(1.0f)
                 return DetectionResult(
                     isObjectNearby = true,
-                    confidence = (ratio / threshold).coerceAtMost(1.0f),
-                    estimatedRadiusMeters = 500f * (1f - (ratio / threshold)),
+                    confidence = confidence,
+                    estimatedRadiusMeters = 500f * (1f - confidence),
                     soundLevel = SoundLevel.HIGH,
                     detectedObject = DRONE,
                     rmsDb = 0f,
-                    reason = "ДРОН | ${peak.toInt()}Hz | ratio=${"%.2f".format(ratio)}"
+                    reason = "ДРОН | ${peak.toInt()}Hz | гармоники подтверждены"
                 )
             }
 
@@ -108,27 +114,5 @@ enum class DetectedObject(
                 DetectionResult(false, 0f, null, SoundLevel.MEDIUM, UNKNOWN, 0f, "НЕТ СООТВЕТСТВИЯ | ${peak.toInt()}Hz")
             }
         }
-    }
-}
-
-object AdaptiveThreshold {
-    private val backgroundRatios = mutableListOf<Float>()
-    private const val CALIBRATION_PACKETS = 10
-
-    fun calibrate(ratio: Float) {
-        if (backgroundRatios.size < CALIBRATION_PACKETS) {
-            backgroundRatios.add(ratio)
-        }
-    }
-
-    fun isCalibrated(): Boolean = backgroundRatios.size >= CALIBRATION_PACKETS
-
-    fun getThreshold(): Float {
-        val avg = backgroundRatios.average().toFloat()
-        return avg * 1.5f
-    }
-
-    fun reset() {
-        backgroundRatios.clear()
     }
 }

@@ -182,7 +182,19 @@
                 android:id="@+id/calibrateButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="КАЛИБРОВКА ФОНА" />
+                android:backgroundTint="#FF9800"
+                android:text="КАЛИБРОВКА ФОНА"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/centerMapButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:backgroundTint="#4CAF50"
+                android:text="ЦЕНТР КАРТЫ"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
 
         </LinearLayout>
     </ScrollView>

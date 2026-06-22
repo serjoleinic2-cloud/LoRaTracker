@@ -48,9 +48,13 @@ class MainActivity : AppCompatActivity() {
     private var gpsJumpCount = 0
     private var fixedDetectorPoint: GeoPoint? = null
     private val detectorMarkers = mutableMapOf<Int, Marker>()
+    private val targetMarkers = mutableListOf<Marker>()
+    private val targetCircles = mutableListOf<Polygon>()
+    private val targetLines = mutableListOf<Polyline>()
     private lateinit var wakeLock: android.os.PowerManager.WakeLock
     private var pendingUsbIntent: PendingIntent? = null
     private var isTestMode = false
+    private var isFirstFix = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -152,11 +156,23 @@ class MainActivity : AppCompatActivity() {
 
         binding.calibrateButton.setOnClickListener {
             AdaptiveThreshold.reset()
-            binding.usbStatusText.text = "Калибровка: собираю фоновый шум..."
+            binding.objectDescription.text = "Калибровка: собираю фоновый шум (20 пакетов)..."
+            FileLogger.d("MAIN", "Calibration started")
+        }
+
+        binding.centerMapButton.setOnClickListener {
+            val packet = viewModel.packet.value
+            if (packet != null && packet.latitude != 0.0 && packet.longitude != 0.0) {
+                mapView.controller.animateTo(GeoPoint(packet.latitude, packet.longitude))
+                mapView.controller.setZoom(18.0)
+            }
         }
 
         startUsbService()
         observeData()
+
+        binding.objectDescription.text = "Автокалибровка фона..."
+        AdaptiveThreshold.reset()
     }
 
     private fun observeData() {
@@ -167,25 +183,22 @@ class MainActivity : AppCompatActivity() {
                 launch {
                     viewModel.packet.collect { packet ->
                         packet?.let {
-                            FileLogger.d("MAIN", "viewModel packet: ${it.delayMs}")
+                            FileLogger.d("MAIN", "packet: ${it.detectorId}, peak=${it.soundPeakFreq}")
                             updateUI(it)
+                            val detection = viewModel.detection.value
+                            if (detection != null) {
+                                updateMap(it, detection)
+                            }
                         }
                     }
                 }
                 launch {
                     viewModel.detection.collect { detection ->
                         detection?.let {
-                            FileLogger.d("MAIN", "viewModel detection: ${it.detectedObject.displayName}")
-                            val packet = viewModel.packet.value
-                            if (packet != null) {
-                                FileLogger.d("MAIN", "calling updateMap with packet lat=${packet.latitude}")
-                                if (!isTestMode) {
-                                    updateDetectionUI(it)
-                                    updateMap(packet, it)
-                                }
-                            } else {
-                                FileLogger.d("MAIN", "packet is null, skip updateMap")
-                            }
+                            FileLogger.d("MAIN", "detection: ${it.detectedObject.displayName}")
+                            updateDetectionUI(it)
+                            val packet = viewModel.packet.value ?: return@let
+                            updateMap(packet, it)
                         }
                     }
                 }
@@ -202,7 +215,11 @@ class MainActivity : AppCompatActivity() {
     private fun updateUI(packet: TelemetryPacket) {
         FileLogger.d("AUDIO", "peak=${packet.soundPeakFreq}Hz centroid=${packet.soundCenterFreq}Hz ratio=${packet.soundEnergyRatio} sat=${packet.gpsSats}")
         runOnUiThread {
-            binding.gpsStatus.text = "GPS: ${packet.gpsSats} спутн."
+            binding.gpsStatus.text = if (packet.gpsSats > 0) {
+                "GPS: ${packet.gpsSats} спутн."
+            } else {
+                "GPS: поиск..."
+            }
             val currentPoint = GeoPoint(packet.latitude, packet.longitude)
             if (lastGpsPoint != null) {
                 val dist = currentPoint.distanceToAsDouble(lastGpsPoint).toFloat()
@@ -232,6 +249,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateDetectionUI(detection: DetectionResult) {
         runOnUiThread {
+            if (!AdaptiveThreshold.isCalibrated()) {
+                binding.objectDescription.text = "Калибровка: ${AdaptiveThreshold.getProgress()}/20"
+                binding.objectEmoji.text = "⏳"
+                return@runOnUiThread
+            }
+
+            if (detection.isObjectNearby && detection.detectedObject != DetectedObject.UNKNOWN) {
+                try {
+                    val toneGen = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 100)
+                    toneGen.startTone(android.media.ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 200)
+                } catch (_: Exception) {}
+            }
+
             binding.objectEmoji.text = detection.detectedObject.emoji
             binding.objectName.text = if (detection.isObjectNearby) {
                 detection.detectedObject.displayName.uppercase()
@@ -248,7 +278,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             val packet = viewModel.packet.value
-            if (packet != null && packet.isGpsValid) {
+            if (packet != null) {
                 updateMap(packet, detection)
             }
         }
@@ -265,18 +295,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMap(packet: TelemetryPacket, detection: DetectionResult) {
-        FileLogger.d("MAP", "updateMap: lat=${packet.latitude}, lon=${packet.longitude}, id=${packet.detectorId}")
+        FileLogger.d("MAP", "updateMap called: lat=${packet.latitude}, lon=${packet.longitude}, id=${packet.detectorId}")
 
-        val detectorPoint = if (packet.latitude == 0.0 && packet.longitude == 0.0 && fixedDetectorPoint != null) {
-            fixedDetectorPoint!!
-        } else {
-            fixedDetectorPoint = GeoPoint(packet.latitude, packet.longitude)
-            GeoPoint(packet.latitude, packet.longitude)
+        val detectorPoint = when {
+            packet.latitude != 0.0 && packet.longitude != 0.0 -> {
+                fixedDetectorPoint = GeoPoint(packet.latitude, packet.longitude)
+                GeoPoint(packet.latitude, packet.longitude)
+            }
+            fixedDetectorPoint != null -> fixedDetectorPoint!!
+            else -> GeoPoint(55.7558, 37.6173)
         }
 
         val detectorId = packet.detectorId
 
+        if (isFirstFix && packet.latitude != 0.0 && packet.longitude != 0.0) {
+            mapView.controller.animateTo(detectorPoint)
+            mapView.controller.setZoom(18.0)
+            isFirstFix = false
+        }
+
         runOnUiThread {
+            targetMarkers.forEach { mapView.overlays.remove(it) }
+            targetCircles.forEach { mapView.overlays.remove(it) }
+            targetLines.forEach { mapView.overlays.remove(it) }
+            targetMarkers.clear()
+            targetCircles.clear()
+            targetLines.clear()
+
             val existingMarker = detectorMarkers[detectorId]
             if (existingMarker != null) {
                 existingMarker.position = detectorPoint
@@ -301,12 +346,44 @@ class MainActivity : AppCompatActivity() {
                 val objMarker = Marker(mapView).apply {
                     position = GeoPoint(objLat, objLon)
                     title = "${detection.detectedObject.emoji} ${detection.detectedObject.displayName}"
-                    snippet = "Детектор $detectorId | ${dist.toInt()}м"
+                    snippet = "Расстояние: ${dist.toInt()}м"
+                    setOnMarkerClickListener { marker, mapView ->
+                        marker.showInfoWindow()
+                        true
+                    }
                 }
+                targetMarkers.add(objMarker)
                 mapView.overlays.add(objMarker)
+
+                val handler = android.os.Handler(android.os.Looper.getMainLooper())
+                handler.postDelayed({
+                    objMarker.icon = resources.getDrawable(android.R.drawable.ic_menu_compass, null)
+                }, 100)
+                handler.postDelayed({
+                    objMarker.icon = null
+                }, 500)
+
+                val line = Polyline().apply {
+                    addPoint(detectorPoint)
+                    addPoint(GeoPoint(objLat, objLon))
+                    color = android.graphics.Color.RED
+                    width = 3f
+                }
+                targetLines.add(line)
+                mapView.overlays.add(line)
+
+                val objCircle = Polygon().apply {
+                    points = Polygon.pointsAsCircle(detectorPoint, dist.toDouble())
+                    fillColor = 0x11FF0000
+                    strokeColor = 0xFFFF0000.toInt()
+                    strokeWidth = 2f
+                }
+                targetCircles.add(objCircle)
+                mapView.overlays.add(objCircle)
             }
 
             mapView.invalidate()
+            mapView.controller.animateTo(detectorPoint)
         }
     }
 

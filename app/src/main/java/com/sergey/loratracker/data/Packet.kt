@@ -15,7 +15,8 @@ data class TelemetryPacket(
     val temperature: Float,
     val soundPeakFreq: Float,
     val soundCenterFreq: Float,
-    val rssi: Int
+    val rssi: Int,
+    val soundLevelDb: Float = 0f
 ) {
     val hasGpsFix: Boolean
         get() = latitude != 0.0 && longitude != 0.0
@@ -28,6 +29,10 @@ data class TelemetryPacket(
     // INMP441: оценка энергии через соотношение centroid/peak
     val soundEnergyRatio: Float
         get() = if (soundPeakFreq > 100) soundCenterFreq / soundPeakFreq else 0f
+
+    fun calculateDbSPL(peakAmplitude: Float): Float {
+        return 94f + 20f * kotlin.math.log10(peakAmplitude / 420426f)
+    }
 }
 
 enum class SoundLevel(val displayName: String) {
