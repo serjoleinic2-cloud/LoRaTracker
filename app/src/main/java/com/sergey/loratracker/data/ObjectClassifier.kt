@@ -11,59 +11,63 @@ enum class DetectedObject(
     val maxDetectionRangeMeters: Float,
     val description: String
 ) {
-    HUMAN("Человек", "\uD83D\uDEB6", 85f..350f, 1.0f, 0f, 50f, "Голос, шаги"),
-    GROUP("Группа", "\uD83D\uDC65", 150f..500f, 1.5f, 0f, 80f, "Несколько человек"),
-    CAR("Легковая", "\uD83D\uDE97", 200f..1500f, 0.8f, 0f, 150f, "Двигатель"),
-    TRUCK("Грузовик", "\uD83D\uDE9A", 80f..800f, 0.8f, 0f, 300f, "Дизель"),
-    MOTORCYCLE("Мотоцикл", "\uD83C\uDFCD", 1500f..5000f, 2.0f, 0f, 200f, "Высокие обороты"),
-    SCOOTER("Мопед", "\uD83D\uDEF5", 500f..1500f, 1.5f, 0f, 100f, "Скутер"),
-    DRONE("Дрон", "\uD83D\uDE81", 400f..1500f, 0.5f, 0f, 500f, "Пропеллеры (басовый тон)"),
-    DRONE_SMALL("Мелкий дрон", "\uD83D\uDE81", 10000f..20000f, 1.0f, 0f, 300f, "Мелкий пропеллер"),
-    HELICOPTER("Вертолёт", "\uD83D\uDE81", 500f..3000f, 1.5f, 0f, 2000f, "Несущий винт"),
-    AIRPLANE("Самолёт", "\u2708", 300f..2000f, 1.2f, 0f, 5000f, "Реактивный"),
-    TANK("Танк", "\uD83D\uDEA2", 100f..2000f, 2.0f, 0f, 1000f, "Гусеницы"),
-    CONSTRUCTION("Стройка", "\uD83C\uDFD7", 300f..2000f, 1.8f, 0f, 200f, "Техника"),
-    BICYCLE("Велосипед", "\uD83D\uDEB2", 50f..200f, 1.1f, 0f, 30f, "Цепь"),
-    LOW_FREQ("Низкочастотный", "\uD83D\uDD0A", 150f..1000f, 0.5f, 0f, 100f, "Мотор/гул неопределён"),
+    HUMAN("Человек", "\uD83D\uDEB6", 85f..350f, 0f, 0f, 50f, "Голос"),
+    GROUP("Группа", "\uD83D\uDC65", 150f..500f, 0f, 0f, 80f, "Несколько человек"),
+    CAR("Легковая", "\uD83D\uDE97", 200f..1500f, 0f, 0f, 150f, "Двигатель"),
+    TRUCK("Грузовик", "\uD83D\uDE9A", 80f..800f, 0f, 0f, 300f, "Дизель"),
+    MOTORCYCLE("Мотоцикл", "\uD83C\uDFCD", 1500f..5000f, 0f, 0f, 200f, "Высокие обороты"),
+    SCOOTER("Мопед", "\uD83D\uDEF5", 500f..1500f, 0f, 0f, 100f, "Скутер"),
+    DRONE("Дрон", "\uD83D\uDE81", 400f..1500f, 0f, 0f, 500f, "Пропеллеры"),
+    DRONE_SMALL("Мелкий дрон", "\uD83D\uDE81", 10000f..20000f, 0f, 0f, 300f, "Мелкий пропеллер"),
+    HELICOPTER("Вертолёт", "\uD83D\uDE81", 500f..3000f, 0f, 0f, 2000f, "Несущий винт"),
+    AIRPLANE("Самолёт", "\u2708", 300f..2000f, 0f, 0f, 5000f, "Реактивный"),
+    TANK("Танк", "\uD83D\uDEA2", 100f..2000f, 0f, 0f, 1000f, "Гусеницы"),
+    TRACTOR("Трактор", "\uD83D\uDE9C", 80f..200f, 0f, 0f, 300f, "Стройка/трактор"),
+    CONSTRUCTION("Стройка", "\uD83C\uDFD7", 80f..500f, 0f, 0f, 200f, "Трактор/стройка"),
+    BICYCLE("Велосипед", "\uD83D\uDEB2", 50f..150f, 0f, 0f, 30f, "Цепь"),
+    LOW_FREQ("Низкочастотный", "\uD83D\uDD0A", 150f..1000f, 0f, 0f, 100f, "Мотор/гул неопределён"),
     UNKNOWN("Фон", "\uD83C\uDF3F", 0f..0f, 0f, 0f, 0f, "Нет сигнала");
 
     companion object {
         fun classify(packet: TelemetryPacket): DetectionResult {
             val peak = packet.soundPeakFreq
             val ratio = packet.soundEnergyRatio
-            val centroid = packet.soundCenterFreq
 
             if (peak < 50f || peak > 20000f) {
                 return DetectionResult(false, 0f, null, SoundLevel.SILENT, UNKNOWN, 0f, "ТИШИНА")
             }
 
-            if (peak < 150f && ratio < 1.2f) {
-                return DetectionResult(false, 0f, null, SoundLevel.LOW, UNKNOWN, 0f, "ГОРОДСКОЙ ФОН")
+            AdaptiveThreshold.calibrate(ratio)
+            val threshold = if (AdaptiveThreshold.isCalibrated()) {
+                AdaptiveThreshold.getThreshold()
+            } else {
+                1.0f
             }
 
-            if (peak < 200f && ratio > 5f) {
-                return DetectionResult(false, 0f, null, SoundLevel.LOW, UNKNOWN, 0f, "ВЕТЕР")
+            if (ratio < threshold * 0.8f) {
+                return DetectionResult(false, 0f, null, SoundLevel.LOW, UNKNOWN, 0f, "ФОН")
             }
 
-            val hasHarmonics = centroid > peak * 1.5f
-
-            if (peak in 400f..1500f && hasHarmonics) {
-                val confidence = ((centroid / peak) / 2f).coerceAtMost(1.0f)
+            if (peak in 400f..1500f && ratio >= threshold * 0.6f) {
                 return DetectionResult(
                     isObjectNearby = true,
-                    confidence = confidence,
-                    estimatedRadiusMeters = 300f * (1f - confidence),
+                    confidence = (ratio / threshold).coerceAtMost(1.0f),
+                    estimatedRadiusMeters = 500f * (1f - (ratio / threshold)),
                     soundLevel = SoundLevel.HIGH,
                     detectedObject = DRONE,
                     rmsDb = 0f,
-                    reason = "ДРОН | ${peak.toInt()}Hz + гармоники"
+                    reason = "ДРОН | ${peak.toInt()}Hz | ratio=${"%.2f".format(ratio)}"
                 )
             }
 
             val scores = values().filter { it != UNKNOWN }.map { obj ->
                 val inRange = peak in obj.peakFreqRange
-                val ratioOk = ratio >= obj.centroidMinRatio
-                val ratioScore = if (ratioOk) ratio / obj.centroidMinRatio else 0f
+                val ratioScore = if (obj.centroidMinRatio > 0f) {
+                    val ratioOk = ratio >= obj.centroidMinRatio
+                    if (ratioOk) ratio / obj.centroidMinRatio else 0f
+                } else {
+                    1f
+                }
                 val center = (obj.peakFreqRange.start + obj.peakFreqRange.endInclusive) / 2
                 val rangeWidth = obj.peakFreqRange.endInclusive - obj.peakFreqRange.start
                 val peakScore = 1f - kotlin.math.abs(peak - center) / (rangeWidth + 1f)
@@ -104,5 +108,27 @@ enum class DetectedObject(
                 DetectionResult(false, 0f, null, SoundLevel.MEDIUM, UNKNOWN, 0f, "НЕТ СООТВЕТСТВИЯ | ${peak.toInt()}Hz")
             }
         }
+    }
+}
+
+object AdaptiveThreshold {
+    private val backgroundRatios = mutableListOf<Float>()
+    private const val CALIBRATION_PACKETS = 10
+
+    fun calibrate(ratio: Float) {
+        if (backgroundRatios.size < CALIBRATION_PACKETS) {
+            backgroundRatios.add(ratio)
+        }
+    }
+
+    fun isCalibrated(): Boolean = backgroundRatios.size >= CALIBRATION_PACKETS
+
+    fun getThreshold(): Float {
+        val avg = backgroundRatios.average().toFloat()
+        return avg * 1.5f
+    }
+
+    fun reset() {
+        backgroundRatios.clear()
     }
 }

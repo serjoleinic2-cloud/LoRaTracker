@@ -178,6 +178,12 @@
                 android:layout_height="wrap_content"
                 android:text="ОТПРАВИТЬ ЛОГИ" />
 
+            <Button
+                android:id="@+id/calibrateButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="КАЛИБРОВКА ФОНА" />
+
         </LinearLayout>
     </ScrollView>
 

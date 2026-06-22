@@ -17,6 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.sergey.loratracker.data.DetectedObject
 import com.sergey.loratracker.data.DetectionResult
+import com.sergey.loratracker.data.AdaptiveThreshold
 import com.sergey.loratracker.data.TelemetryPacket
 import com.sergey.loratracker.databinding.ActivityMainBinding
 import com.sergey.loratracker.service.FileLogger
@@ -149,6 +150,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        binding.calibrateButton.setOnClickListener {
+            AdaptiveThreshold.reset()
+            binding.usbStatusText.text = "Калибровка: собираю фоновый шум..."
+        }
+
         startUsbService()
         observeData()
     }
@@ -170,7 +176,16 @@ class MainActivity : AppCompatActivity() {
                     viewModel.detection.collect { detection ->
                         detection?.let {
                             FileLogger.d("MAIN", "viewModel detection: ${it.detectedObject.displayName}")
-                            if (!isTestMode) updateDetectionUI(it)
+                            val packet = viewModel.packet.value
+                            if (packet != null) {
+                                FileLogger.d("MAIN", "calling updateMap with packet lat=${packet.latitude}")
+                                if (!isTestMode) {
+                                    updateDetectionUI(it)
+                                    updateMap(packet, it)
+                                }
+                            } else {
+                                FileLogger.d("MAIN", "packet is null, skip updateMap")
+                            }
                         }
                     }
                 }
@@ -250,18 +265,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMap(packet: TelemetryPacket, detection: DetectionResult) {
-        FileLogger.d("MAP", "updateMap called: lat=${packet.latitude}, lon=${packet.longitude}, isGpsValid=${packet.isGpsValid}, gpsSats=${packet.gpsSats}")
+        FileLogger.d("MAP", "updateMap: lat=${packet.latitude}, lon=${packet.longitude}, id=${packet.detectorId}")
 
-        val detectorPoint = if (gpsJumpCount > 3 && fixedDetectorPoint != null) {
+        val detectorPoint = if (packet.latitude == 0.0 && packet.longitude == 0.0 && fixedDetectorPoint != null) {
             fixedDetectorPoint!!
         } else {
             fixedDetectorPoint = GeoPoint(packet.latitude, packet.longitude)
             GeoPoint(packet.latitude, packet.longitude)
-        }
-
-        if (packet.latitude == 0.0 && packet.longitude == 0.0 && fixedDetectorPoint == null) {
-            FileLogger.d("MAP", "No GPS fix yet, skip map")
-            return
         }
 
         val detectorId = packet.detectorId
