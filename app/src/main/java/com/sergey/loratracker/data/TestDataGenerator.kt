@@ -59,6 +59,7 @@ object TestDataGenerator {
             Log.d("TEST", "Emitting: peak=$peakFreq, obj=${currentObject?.displayName ?: "none"}")
 
             emit(TelemetryPacket(
+                detectorId = 0,
                 delayMs = Random.nextInt(10000, 99999),
                 gpsSats = 8,
                 latitude = DETECTOR_LAT,

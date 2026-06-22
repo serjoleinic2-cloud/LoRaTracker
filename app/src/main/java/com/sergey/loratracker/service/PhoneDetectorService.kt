@@ -107,6 +107,7 @@ class PhoneDetectorService : Service() {
             audioAnalyzer?.startAnalysis()?.collect { features ->
                 val location = currentLocation
                 val packet = TelemetryPacket(
+                    detectorId = 0,
                     delayMs = System.currentTimeMillis().toInt(),
                     gpsSats = if (location != null) 8 else 0,
                     latitude = location?.latitude ?: 0.0,

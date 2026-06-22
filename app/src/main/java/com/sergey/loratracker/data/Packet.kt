@@ -3,6 +3,7 @@ package com.sergey.loratracker.data
 import java.time.LocalTime
 
 data class TelemetryPacket(
+    val detectorId: Int,
     val delayMs: Int,
     val gpsSats: Int,
     val latitude: Double,

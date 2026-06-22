@@ -17,7 +17,7 @@ enum class DetectedObject(
     TRUCK("Грузовик", "\uD83D\uDE9A", 80f..800f, 0.8f, 0f, 300f, "Дизель"),
     MOTORCYCLE("Мотоцикл", "\uD83C\uDFCD", 1500f..5000f, 2.0f, 0f, 200f, "Высокие обороты"),
     SCOOTER("Мопед", "\uD83D\uDEF5", 500f..1500f, 1.5f, 0f, 100f, "Скутер"),
-    DRONE("Дрон", "\uD83D\uDE81", 4000f..20000f, 1.2f, 0f, 500f, "Пропеллеры"),
+    DRONE("Дрон", "\uD83D\uDE81", 400f..1500f, 0.5f, 0f, 500f, "Пропеллеры (басовый тон)"),
     DRONE_SMALL("Мелкий дрон", "\uD83D\uDE81", 10000f..20000f, 1.0f, 0f, 300f, "Мелкий пропеллер"),
     HELICOPTER("Вертолёт", "\uD83D\uDE81", 500f..3000f, 1.5f, 0f, 2000f, "Несущий винт"),
     AIRPLANE("Самолёт", "\u2708", 300f..2000f, 1.2f, 0f, 5000f, "Реактивный"),
@@ -31,6 +31,7 @@ enum class DetectedObject(
         fun classify(packet: TelemetryPacket): DetectionResult {
             val peak = packet.soundPeakFreq
             val ratio = packet.soundEnergyRatio
+            val centroid = packet.soundCenterFreq
 
             if (peak < 50f || peak > 20000f) {
                 return DetectionResult(false, 0f, null, SoundLevel.SILENT, UNKNOWN, 0f, "ТИШИНА")
@@ -42,6 +43,21 @@ enum class DetectedObject(
 
             if (peak < 200f && ratio > 5f) {
                 return DetectionResult(false, 0f, null, SoundLevel.LOW, UNKNOWN, 0f, "ВЕТЕР")
+            }
+
+            val hasHarmonics = centroid > peak * 1.5f
+
+            if (peak in 400f..1500f && hasHarmonics) {
+                val confidence = ((centroid / peak) / 2f).coerceAtMost(1.0f)
+                return DetectionResult(
+                    isObjectNearby = true,
+                    confidence = confidence,
+                    estimatedRadiusMeters = 300f * (1f - confidence),
+                    soundLevel = SoundLevel.HIGH,
+                    detectedObject = DRONE,
+                    rmsDb = 0f,
+                    reason = "ДРОН | ${peak.toInt()}Hz + гармоники"
+                )
             }
 
             val scores = values().filter { it != UNKNOWN }.map { obj ->

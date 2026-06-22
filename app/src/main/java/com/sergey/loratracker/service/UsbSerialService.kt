@@ -18,7 +18,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.sergey.loratracker.MainActivity
 import com.sergey.loratracker.R
-import com.sergey.loratracker.data.PacketParser
+import com.sergey.loratracker.data.DetectorManager
 import com.sergey.loratracker.data.TelemetryPacket
 import com.hoho.android.usbserial.driver.UsbSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
@@ -34,7 +34,7 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
     private var serialIoManager: SerialInputOutputManager? = null
     private var usbPort: UsbSerialPort? = null
     private val lineBuffer = StringBuilder()
-    
+
     companion object {
         private const val TAG = "UsbSerialService"
         private const val CHANNEL_ID = "lora_tracker_channel"
@@ -259,46 +259,65 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
     }
     
     override fun onNewData(data: ByteArray?) {
-        FileLogger.d(TAG, "onNewData called, data=${data?.size ?: "null"} bytes")
-        if (data == null || data.isEmpty()) {
-            FileLogger.w(TAG, "onNewData: empty or null data")
-            return
-        }
+        if (data == null || data.isEmpty()) return
 
         val raw = String(data, Charsets.UTF_8)
-        FileLogger.d(TAG, "RAW: [$raw]")
-
         lineBuffer.append(raw)
-        FileLogger.d(TAG, "Buffer size: ${lineBuffer.length}")
 
-        var newlineIndex: Int
-        while (lineBuffer.indexOf("\n").also { newlineIndex = it } != -1) {
-            val line = lineBuffer.substring(0, newlineIndex).trim().removeSuffix("\r")
-            lineBuffer.delete(0, newlineIndex + 1)
+        val pattern = Regex("""'([^']*)'(?:\s+with\s+RSSI\s+(-?\d+))?""")
 
-            FileLogger.d(TAG, "LINE: [$line]")
+        while (true) {
+            val match = pattern.find(lineBuffer.toString()) ?: break
 
-            if (line.isNotEmpty()) {
-                val parseResult = PacketParser.parse(line)
-                FileLogger.d(TAG, "PARSE RESULT for [$line]: ${if (parseResult != null) "OK" else "FAILED"}")
-                parseResult?.let { (packet, _) ->
-                    FileLogger.d(TAG, "PARSED OK: delay=${packet.delayMs}")
-                    FileLogger.d("LORA", "PACKET: peak=${packet.soundPeakFreq} centroid=${packet.soundCenterFreq} ratio=${packet.soundEnergyRatio}")
-                    FileLogger.d("LORA_RAW", "peak=${packet.soundPeakFreq.toInt()} centroid=${packet.soundCenterFreq.toInt()} ratio=${"%.2f".format(packet.soundEnergyRatio)}")
-                    if (packet.soundPeakFreq > 4000f) {
-                        FileLogger.d("HIGH_FREQ", "FOUND: peak=${packet.soundPeakFreq.toInt()}Hz")
-                    } else {
-                        FileLogger.d("LOW_FREQ", "peak=${packet.soundPeakFreq.toInt()}Hz, no high freq")
-                    }
-                    val emitted = _packetFlow.tryEmit(packet)
-                    FileLogger.d(TAG, "EMITTED: $emitted")
+            val csvData = match.groupValues[1]
+            val rssiStr = match.groupValues.getOrNull(2)
+            val rssi = rssiStr?.toIntOrNull() ?: -999
+
+            lineBuffer.delete(0, match.range.last + 1)
+
+            val fields = csvData.split(";")
+            if (fields.size >= 13) {
+                try {
+                    val detectorId = fields[0].toInt()
+
+                    val packet = TelemetryPacket(
+                        detectorId = detectorId,
+                        delayMs = fields[0].toInt(),
+                        gpsSats = fields[1].toInt(),
+                        latitude = fields[2].toDouble(),
+                        longitude = fields[3].toDouble(),
+                        gpsTime = parseTime(fields[4], fields[5], fields[6]),
+                        accelX = fields[7].toFloat(),
+                        accelY = fields[8].toFloat(),
+                        accelZ = fields[9].toFloat(),
+                        temperature = fields[10].toFloat(),
+                        soundPeakFreq = fields[11].toFloat(),
+                        soundCenterFreq = fields[12].toFloat(),
+                        rssi = rssi
+                    )
+
+                    DetectorManager.emit(detectorId, packet)
+
+                    _packetFlow.tryEmit(packet)
                     lastPacket = packet
                     listeners.forEach { it(packet) }
+
+                } catch (e: Exception) {
+                    FileLogger.e(TAG, "Parse error: ${e.message}")
                 }
             }
         }
+
+        if (lineBuffer.length > 8192) {
+            lineBuffer.delete(0, lineBuffer.length - 4096)
+        }
     }
     
+    private fun parseTime(h: String, m: String, s: String): java.time.LocalTime? {
+        return if (h == "0" && m == "0" && s == "0") null
+        else java.time.LocalTime.of(h.toInt(), m.toInt(), s.toInt())
+    }
+
     override fun onRunError(e: Exception?) {
         FileLogger.e(TAG, "Serial error", e)
         _connectionState.tryEmit(false)

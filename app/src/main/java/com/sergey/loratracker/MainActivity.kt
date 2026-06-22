@@ -17,7 +17,6 @@ import androidx.lifecycle.lifecycleScope
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.sergey.loratracker.data.DetectedObject
 import com.sergey.loratracker.data.DetectionResult
-import com.sergey.loratracker.data.PacketParser
 import com.sergey.loratracker.data.TelemetryPacket
 import com.sergey.loratracker.databinding.ActivityMainBinding
 import com.sergey.loratracker.service.FileLogger
@@ -44,11 +43,10 @@ class MainActivity : AppCompatActivity() {
     private var lastPeakFreq = 0f
     private var lastCenterFreq = 0f
     private var stableCount = 0
-    private var lastMapUpdate = 0L
-    private val MAP_UPDATE_INTERVAL_MS = 4000L
     private var lastGpsPoint: GeoPoint? = null
     private var gpsJumpCount = 0
     private var fixedDetectorPoint: GeoPoint? = null
+    private val detectorMarkers = mutableMapOf<Int, Marker>()
     private var pendingUsbIntent: PendingIntent? = null
     private var isTestMode = false
 
@@ -142,9 +140,6 @@ class MainActivity : AppCompatActivity() {
                 binding.usbStatusText.text = "Нет логов для отправки"
             }
         }
-
-        val parserWorks = PacketParser.testParse()
-        Log.d("MAIN", "Parser test: $parserWorks")
 
         startUsbService()
         observeData()
@@ -247,84 +242,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMap(packet: TelemetryPacket, detection: DetectionResult) {
-        val now = System.currentTimeMillis()
-        if (now - lastMapUpdate < MAP_UPDATE_INTERVAL_MS) {
-            return
-        }
-        lastMapUpdate = now
-
-        if (!packet.isGpsValid) {
-            FileLogger.d("MAP", "GPS invalid, skip map update")
-            return
-        }
+        if (!packet.isGpsValid) return
 
         val detectorPoint = GeoPoint(packet.latitude, packet.longitude)
+        val detectorId = packet.detectorId
 
         runOnUiThread {
-            val displayPoint = if (gpsJumpCount > 3 && fixedDetectorPoint != null) {
-                fixedDetectorPoint
+            val existingMarker = detectorMarkers[detectorId]
+            if (existingMarker != null) {
+                existingMarker.position = detectorPoint
+                existingMarker.snippet = "ID:$detectorId RSSI:${packet.rssi}"
             } else {
-                fixedDetectorPoint = detectorPoint
-                detectorPoint
-            }
-
-            mapView.overlays.clear()
-
-            val detectorMarker = Marker(mapView).apply {
-                position = displayPoint
-                title = "📡 ДЕТЕКТОР"
-                snippet = "ID: ${packet.delayMs}\nRSSI: ${packet.rssi}"
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                icon = resources.getDrawable(android.R.drawable.ic_menu_mylocation, null)
-            }
-            mapView.overlays.add(detectorMarker)
-
-            val maxRange = detection.detectedObject.maxDetectionRangeMeters
-            if (maxRange > 0) {
-                val rangeCircle = Polygon().apply {
-                    points = Polygon.pointsAsCircle(displayPoint!!, maxRange.toDouble())
-                    fillColor = 0x154CAF50
-                    strokeColor = 0xFF4CAF50.toInt()
-                    strokeWidth = 2f
+                val newMarker = Marker(mapView).apply {
+                    position = detectorPoint
+                    title = "📡 ДЕТЕКТОР $detectorId"
+                    snippet = "RSSI:${packet.rssi}"
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                 }
-                mapView.overlays.add(rangeCircle)
+                detectorMarkers[detectorId] = newMarker
+                mapView.overlays.add(newMarker)
             }
 
             if (detection.isObjectNearby && detection.estimatedRadiusMeters != null) {
-                val dist = detection.estimatedRadiusMeters!!
+                val dist = detection.estimatedRadiusMeters
                 val angle = (packet.delayMs % 360).toDouble()
                 val objLat = packet.latitude + kotlin.math.cos(Math.toRadians(angle)) * dist * 0.00001
                 val objLon = packet.longitude + kotlin.math.sin(Math.toRadians(angle)) * dist * 0.00001
-                val objPoint = GeoPoint(objLat, objLon)
 
                 val objMarker = Marker(mapView).apply {
-                    position = objPoint
+                    position = GeoPoint(objLat, objLon)
                     title = "${detection.detectedObject.emoji} ${detection.detectedObject.displayName}"
-                    snippet = "Расстояние: ${dist.toInt()}м\nУверенность: ${(detection.confidence * 100).toInt()}%"
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    snippet = "Детектор $detectorId | ${dist.toInt()}м"
                 }
                 mapView.overlays.add(objMarker)
-
-                val line = Polyline().apply {
-                    addPoint(displayPoint!!)
-                    addPoint(objPoint)
-                    color = android.graphics.Color.parseColor("#FF0000")
-                    width = 3f
-                }
-                mapView.overlays.add(line)
-
-                val objCircle = Polygon().apply {
-                    points = Polygon.pointsAsCircle(displayPoint!!, dist.toDouble())
-                    fillColor = 0x11FF0000
-                    strokeColor = 0xFFFF0000.toInt()
-                    strokeWidth = 2f
-                }
-                mapView.overlays.add(objCircle)
             }
 
             mapView.invalidate()
-            mapView.controller.animateTo(displayPoint!!)
-            FileLogger.d("MAP", "Updated: detector at ${packet.latitude},${packet.longitude}, obj=${detection.detectedObject.displayName}")
         }
     }
 
