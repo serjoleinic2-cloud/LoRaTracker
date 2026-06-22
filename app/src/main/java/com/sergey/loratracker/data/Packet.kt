@@ -18,7 +18,7 @@ data class TelemetryPacket(
     val rssi: Int
 ) {
     val hasGpsFix: Boolean
-        get() = gpsSats >= 4 && latitude != 0.0 && longitude != 0.0
+        get() = latitude != 0.0 && longitude != 0.0
     
     val isGpsValid: Boolean
         get() = !latitude.isNaN() && !longitude.isNaN() 

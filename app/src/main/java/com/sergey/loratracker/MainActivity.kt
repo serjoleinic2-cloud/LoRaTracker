@@ -47,6 +47,7 @@ class MainActivity : AppCompatActivity() {
     private var gpsJumpCount = 0
     private var fixedDetectorPoint: GeoPoint? = null
     private val detectorMarkers = mutableMapOf<Int, Marker>()
+    private lateinit var wakeLock: android.os.PowerManager.WakeLock
     private var pendingUsbIntent: PendingIntent? = null
     private var isTestMode = false
 
@@ -54,6 +55,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        wakeLock = powerManager.newWakeLock(
+            android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            "LoRaTracker::KeepScreenOn"
+        )
+        wakeLock.acquire()
 
         FileLogger.init(this)
         FileLogger.d("MAIN", "MainActivity onCreate")
@@ -242,9 +250,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMap(packet: TelemetryPacket, detection: DetectionResult) {
-        if (!packet.isGpsValid) return
+        FileLogger.d("MAP", "updateMap called: lat=${packet.latitude}, lon=${packet.longitude}, isGpsValid=${packet.isGpsValid}, gpsSats=${packet.gpsSats}")
 
-        val detectorPoint = GeoPoint(packet.latitude, packet.longitude)
+        val detectorPoint = if (gpsJumpCount > 3 && fixedDetectorPoint != null) {
+            fixedDetectorPoint!!
+        } else {
+            fixedDetectorPoint = GeoPoint(packet.latitude, packet.longitude)
+            GeoPoint(packet.latitude, packet.longitude)
+        }
+
+        if (packet.latitude == 0.0 && packet.longitude == 0.0 && fixedDetectorPoint == null) {
+            FileLogger.d("MAP", "No GPS fix yet, skip map")
+            return
+        }
+
         val detectorId = packet.detectorId
 
         runOnUiThread {
@@ -355,5 +374,10 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         mapView.onPause()
         unregisterReceiver(usbReceiver)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (wakeLock.isHeld) wakeLock.release()
     }
 }
