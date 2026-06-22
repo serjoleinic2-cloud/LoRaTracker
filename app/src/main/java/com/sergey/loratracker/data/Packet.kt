@@ -28,7 +28,7 @@ data class TelemetryPacket(
     
     // INMP441: оценка энергии через соотношение centroid/peak
     val soundEnergyRatio: Float
-        get() = if (soundPeakFreq > 100) soundCenterFreq / soundPeakFreq else 0f
+        get() = if (soundPeakFreq > 0f) soundCenterFreq / soundPeakFreq else 1f
 
     fun calculateDbSPL(peakAmplitude: Float): Float {
         return 94f + 20f * kotlin.math.log10(peakAmplitude / 420426f)

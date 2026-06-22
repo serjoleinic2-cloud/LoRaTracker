@@ -196,6 +196,15 @@
                 android:textColor="#FFFFFF"
                 android:textSize="12sp" />
 
+            <Button
+                android:id="@+id/resetCalibrateButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="СБРОС КАЛИБРОВКИ"
+                android:backgroundTint="#F44336"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+
         </LinearLayout>
     </ScrollView>
 

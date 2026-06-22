@@ -48,6 +48,8 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
 
         var lastPacket: TelemetryPacket? = null
             private set
+        var samePeakCount = 0
+        var lastPeak = 0f
 
         private val listeners = mutableListOf<(TelemetryPacket) -> Unit>()
 
@@ -301,6 +303,16 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
                     _packetFlow.tryEmit(packet)
                     lastPacket = packet
                     listeners.forEach { it(packet) }
+
+                    if (lastPeak == packet.soundPeakFreq) {
+                        samePeakCount++
+                        if (samePeakCount > 5) {
+                            FileLogger.d("PEAK_STUCK", "Peak stuck at ${packet.soundPeakFreq} for $samePeakCount packets")
+                        }
+                    } else {
+                        samePeakCount = 0
+                        lastPeak = packet.soundPeakFreq
+                    }
 
                 } catch (e: Exception) {
                     FileLogger.e(TAG, "Parse error: ${e.message}")

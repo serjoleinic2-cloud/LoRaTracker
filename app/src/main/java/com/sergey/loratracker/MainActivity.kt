@@ -160,6 +160,12 @@ class MainActivity : AppCompatActivity() {
             FileLogger.d("MAIN", "Calibration started")
         }
 
+        binding.resetCalibrateButton.setOnClickListener {
+            AdaptiveThreshold.reset()
+            binding.objectDescription.text = "Калибровка сброшена"
+            FileLogger.d("MAIN", "Calibration reset")
+        }
+
         binding.centerMapButton.setOnClickListener {
             val packet = viewModel.packet.value
             if (packet != null && packet.latitude != 0.0 && packet.longitude != 0.0) {
@@ -244,6 +250,25 @@ class MainActivity : AppCompatActivity() {
                 .filter { it != DetectedObject.UNKNOWN && packet.soundPeakFreq in it.peakFreqRange }
                 .maxByOrNull { it.maxDetectionRangeMeters }
             binding.maxRangeText.text = "Дальность: ${maxRange?.maxDetectionRangeMeters ?: 0}м"
+
+            if (!AdaptiveThreshold.isCalibrated()) {
+                binding.objectDescription.text = "Калибровка: ${AdaptiveThreshold.getProgress()}/20"
+                binding.objectEmoji.text = "⏳"
+                binding.objectName.text = "КАЛИБРОВКА"
+            }
+
+            if (UsbSerialService.samePeakCount > 10) {
+                binding.objectDescription.text = "⚠ Микрофон не реагирует\nПроверьте ESP32 прошивку"
+                binding.objectEmoji.text = "🔇"
+                binding.objectName.text = "ОШИБКА ДАТЧИКА"
+            }
+
+            if (UsbSerialService.samePeakCount > 20) {
+                binding.objectDescription.text = "🔇 ДАТЧИК НЕ РЕАГИРУЕТ\nПроверьте ESP32 прошивку"
+                binding.objectEmoji.text = "❌"
+                binding.objectName.text = "ОШИБКА"
+                binding.distanceText.visibility = View.GONE
+            }
         }
     }
 
@@ -252,13 +277,22 @@ class MainActivity : AppCompatActivity() {
             if (!AdaptiveThreshold.isCalibrated()) {
                 binding.objectDescription.text = "Калибровка: ${AdaptiveThreshold.getProgress()}/20"
                 binding.objectEmoji.text = "⏳"
-                return@runOnUiThread
+                binding.objectName.text = "КАЛИБРОВКА"
+                binding.distanceText.visibility = View.GONE
             }
 
             if (detection.isObjectNearby && detection.detectedObject != DetectedObject.UNKNOWN) {
                 try {
                     val toneGen = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 100)
-                    toneGen.startTone(android.media.ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 200)
+                    toneGen.startTone(android.media.ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 150)
+                } catch (_: Exception) {}
+                try {
+                    val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        vibrator.vibrate(android.os.VibrationEffect.createOneShot(200, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                    } else {
+                        vibrator.vibrate(200)
+                    }
                 } catch (_: Exception) {}
             }
 
@@ -277,10 +311,6 @@ class MainActivity : AppCompatActivity() {
                 binding.distanceText.visibility = View.GONE
             }
 
-            val packet = viewModel.packet.value
-            if (packet != null) {
-                updateMap(packet, detection)
-            }
         }
     }
 
