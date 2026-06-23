@@ -16,7 +16,9 @@ data class TelemetryPacket(
     val soundPeakFreq: Float,
     val soundCenterFreq: Float,
     val rssi: Int,
-    val soundLevelDb: Float = 0f
+    val soundLevelDb: Float = 0f,
+    val soundType: String = "",
+    val emoji: String = ""
 ) {
     val hasGpsFix: Boolean
         get() = latitude != 0.0 && longitude != 0.0

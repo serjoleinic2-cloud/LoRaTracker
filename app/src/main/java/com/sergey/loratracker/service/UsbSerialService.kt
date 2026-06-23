@@ -298,20 +298,27 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
                         rssi = rssi
                     )
 
-                    DetectorManager.emit(detectorId, packet)
+                    val isValid = packet.soundPeakFreq > 0f
+                    val finalPacket = if (!isValid) {
+                        packet.copy(soundType = "Микрофон неактивен", emoji = "⚠️")
+                    } else {
+                        packet
+                    }
 
-                    _packetFlow.tryEmit(packet)
-                    lastPacket = packet
-                    listeners.forEach { it(packet) }
+                    DetectorManager.emit(detectorId, finalPacket)
 
-                    if (lastPeak == packet.soundPeakFreq) {
+                    _packetFlow.tryEmit(finalPacket)
+                    lastPacket = finalPacket
+                    listeners.forEach { it(finalPacket) }
+
+                    if (lastPeak == finalPacket.soundPeakFreq) {
                         samePeakCount++
                         if (samePeakCount > 5) {
-                            FileLogger.d("PEAK_STUCK", "Peak stuck at ${packet.soundPeakFreq} for $samePeakCount packets")
+                            FileLogger.d("PEAK_STUCK", "Peak stuck at ${finalPacket.soundPeakFreq} for $samePeakCount packets")
                         }
                     } else {
                         samePeakCount = 0
-                        lastPeak = packet.soundPeakFreq
+                        lastPeak = finalPacket.soundPeakFreq
                     }
 
                 } catch (e: Exception) {
