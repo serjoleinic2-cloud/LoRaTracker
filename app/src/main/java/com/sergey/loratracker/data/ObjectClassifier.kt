@@ -18,7 +18,7 @@ enum class DetectedObject(
     TRUCK("Грузовик", "\uD83D\uDE9A", 80f..300f, 1.1f, 0f, 300f, "Дизель"),
     MOTORCYCLE("Мотоцикл", "\uD83C\uDFCD", 600f..2000f, 2.0f, 0f, 200f, "Высокие обороты"),
     SCOOTER("Мопед", "\uD83D\uDEF5", 150f..400f, 1.2f, 0f, 100f, "Скутер"),
-    DRONE("Дрон", "\uD83D\uDE81", 400f..1200f, 1.8f, 0f, 500f, "Пропеллеры"),
+    DRONE("Дрон", "\uD83D\uDE81", 8000f..20000f, 3.0f, 0f, 500f, "Пропеллеры"),
     DRONE_SMALL("Мелкий дрон", "\uD83D\uDE81", 800f..2000f, 2.0f, 0f, 300f, "Мелкий пропеллер"),
     HELICOPTER("Вертолёт", "\uD83D\uDE81", 300f..800f, 1.5f, 0f, 2000f, "Несущий винт"),
     AIRPLANE("Самолёт", "\u2708", 200f..500f, 1.2f, 0f, 5000f, "Реактивный"),
@@ -63,7 +63,7 @@ enum class DetectedObject(
             val harmonicRatio = centroid / peak
             val hasHarmonics = harmonicRatio in 1.4f..4.0f
 
-            if (peak in 400f..1200f && hasHarmonics && ratio >= threshold * 0.8f) {
+            if (peak in 8000f..20000f && hasHarmonics && ratio >= threshold * 0.8f) {
                 val confidence = (ratio / (threshold * 0.8f)).coerceAtMost(1.0f)
                 return DetectionResult(
                     isObjectNearby = true,

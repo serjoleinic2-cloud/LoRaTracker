@@ -221,6 +221,14 @@ class MainActivity : AppCompatActivity() {
     private fun updateUI(packet: TelemetryPacket) {
         FileLogger.d("AUDIO", "peak=${packet.soundPeakFreq}Hz centroid=${packet.soundCenterFreq}Hz ratio=${packet.soundEnergyRatio} sat=${packet.gpsSats}")
         runOnUiThread {
+            if (packet.soundType.isNotEmpty()) {
+                binding.objectName.text = packet.soundType
+                binding.objectEmoji.text = packet.emoji
+                binding.objectDescription.text = "Датчик не передает звук"
+                binding.distanceText.visibility = View.GONE
+                return@runOnUiThread
+            }
+
             binding.gpsStatus.text = if (packet.gpsSats > 0) {
                 "GPS: ${packet.gpsSats} спутн."
             } else {
@@ -257,18 +265,6 @@ class MainActivity : AppCompatActivity() {
                 binding.objectName.text = "КАЛИБРОВКА"
             }
 
-            if (UsbSerialService.samePeakCount > 10) {
-                binding.objectDescription.text = "⚠ Микрофон не реагирует\nПроверьте ESP32 прошивку"
-                binding.objectEmoji.text = "🔇"
-                binding.objectName.text = "ОШИБКА ДАТЧИКА"
-            }
-
-            if (UsbSerialService.samePeakCount > 20) {
-                binding.objectDescription.text = "🔇 ДАТЧИК НЕ РЕАГИРУЕТ\nПроверьте ESP32 прошивку"
-                binding.objectEmoji.text = "❌"
-                binding.objectName.text = "ОШИБКА"
-                binding.distanceText.visibility = View.GONE
-            }
         }
     }
 

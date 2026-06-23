@@ -280,10 +280,8 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
             val fields = csvData.split(";")
             if (fields.size >= 13) {
                 try {
-                    val detectorId = fields[0].toInt()
-
                     val packet = TelemetryPacket(
-                        detectorId = detectorId,
+                        detectorId = 1,
                         delayMs = fields[0].toInt(),
                         gpsSats = fields[1].toInt(),
                         latitude = fields[2].toDouble(),
@@ -305,7 +303,7 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
                         packet
                     }
 
-                    DetectorManager.emit(detectorId, finalPacket)
+                    DetectorManager.emit(1, finalPacket)
 
                     _packetFlow.tryEmit(finalPacket)
                     lastPacket = finalPacket
