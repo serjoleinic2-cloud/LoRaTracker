@@ -252,7 +252,7 @@ class MainActivity : AppCompatActivity() {
             binding.tempText.text = "Темп: ${packet.temperature}°C"
             binding.rssiText.text = "RSSI: ${packet.rssi} dBm"
             binding.peakFreqText.text = "Пик: ${packet.soundPeakFreq}Hz"
-            binding.centroidText.text = "Центр: ${packet.soundCenterFreq}Hz"
+            binding.centroidText.text = "Центр: ${packet.soundCenterFreq.toInt()}Hz"
 
             val maxRange = DetectedObject.values()
                 .filter { it != DetectedObject.UNKNOWN && packet.soundPeakFreq in it.peakFreqRange }

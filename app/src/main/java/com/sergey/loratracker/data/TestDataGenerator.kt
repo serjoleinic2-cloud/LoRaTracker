@@ -12,10 +12,7 @@ object TestDataGenerator {
     private const val DETECTOR_LAT = 55.7539
     private const val DETECTOR_LON = 37.6208
 
-    private val testObjects = listOf(
-        DetectedObject.DRONE,
-        DetectedObject.TANK
-    )
+    private val testObjects = listOf(DetectedObject.DRONE)
 
     private var angle = 0f
     private var currentObject: DetectedObject? = null
@@ -31,7 +28,7 @@ object TestDataGenerator {
             Log.d("TEST", "Generating packet #$counter")
 
             if (currentObject == null || Random.nextFloat() < 0.3f) {
-                currentObject = if (Random.nextFloat() > 0.2f) testObjects.random() else null
+                currentObject = if (Random.nextFloat() > 0.2f) DetectedObject.DRONE else null
                 objectDistance = if (currentObject != null) Random.nextFloat() * 40 + 5 else 0f
             } else {
                 objectDistance = (objectDistance + Random.nextFloat() * 10 - 5).coerceIn(3f, 50f)
@@ -39,10 +36,10 @@ object TestDataGenerator {
 
             angle += Random.nextFloat() * 30 + 10
 
-            val (peakFreq, centroidRatio) = when (currentObject) {
-                DetectedObject.TANK -> Pair(300f, 2.0f)
-                DetectedObject.DRONE -> Pair(3000f, 4.0f)
-                else -> Pair(50f, 0.5f)
+            val (peakFreq, centroidRatio) = if (currentObject == DetectedObject.DRONE) {
+                Pair(3000f, 4.0f)
+            } else {
+                Pair(50f, 0.5f)
             }
 
             val distanceFactor = if (currentObject != null) (50f / objectDistance).coerceAtMost(3f) else 0f

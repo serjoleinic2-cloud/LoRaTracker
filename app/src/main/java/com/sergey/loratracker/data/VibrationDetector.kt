@@ -4,9 +4,7 @@ import com.sergey.loratracker.service.FileLogger
 import kotlin.math.sqrt
 
 object VibrationDetector {
-    private const val VIBRATION_THRESHOLD = 1.5f
-    private const val MIN_FREQ = 20f
-    private const val MAX_FREQ = 100f
+    private const val VIBRATION_THRESHOLD = 0.3f
     private const val HISTORY_SIZE = 10
     private const val GRAVITY = 9.8f
 
@@ -19,17 +17,19 @@ object VibrationDetector {
         val ay = packet.accelY
         val az = packet.accelZ
 
+        FileLogger.d("VIBRO_RAW", "ax=${ax} ay=${ay} az=${az}")
+
         val magnitude = sqrt(ax * ax + ay * ay + az * az)
         val vibrationRms = kotlin.math.abs(magnitude - GRAVITY)
 
         accelHistory.add(Triple(ax, ay, az))
         if (accelHistory.size > HISTORY_SIZE) accelHistory.removeAt(0)
 
-        val vibrationFreq = estimateFrequency()
+        val vibrationFreq = 0f
 
-        val isTank = vibrationRms > VIBRATION_THRESHOLD && vibrationFreq in MIN_FREQ..MAX_FREQ
+        val isTank = vibrationRms > VIBRATION_THRESHOLD
 
-        FileLogger.d("VIBRO", "rms=${"%.2f".format(vibrationRms)} freq=${"%.1f".format(vibrationFreq)}Hz tank=$isTank")
+        FileLogger.d("VIBRO", "rms=${"%.2f".format(vibrationRms)} tank=$isTank")
 
         return VibrationResult(isTank, vibrationRms, vibrationFreq)
     }
