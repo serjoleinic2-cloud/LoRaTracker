@@ -13,12 +13,8 @@ object TestDataGenerator {
     private const val DETECTOR_LON = 37.6208
 
     private val testObjects = listOf(
-        DetectedObject.HUMAN,
-        DetectedObject.MOTORCYCLE,
-        DetectedObject.TRUCK,
-        DetectedObject.TANK,
         DetectedObject.DRONE,
-        DetectedObject.GROUP
+        DetectedObject.TANK
     )
 
     private var angle = 0f
@@ -44,12 +40,8 @@ object TestDataGenerator {
             angle += Random.nextFloat() * 30 + 10
 
             val (peakFreq, centroidRatio) = when (currentObject) {
-                DetectedObject.HUMAN -> Pair(300f, 2.0f)
-                DetectedObject.MOTORCYCLE -> Pair(1500f, 3.0f)
-                DetectedObject.TRUCK -> Pair(800f, 2.5f)
-                DetectedObject.TANK -> Pair(600f, 2.8f)
+                DetectedObject.TANK -> Pair(300f, 2.0f)
                 DetectedObject.DRONE -> Pair(3000f, 4.0f)
-                DetectedObject.GROUP -> Pair(1200f, 3.5f)
                 else -> Pair(50f, 0.5f)
             }
 
