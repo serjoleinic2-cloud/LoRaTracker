@@ -259,12 +259,6 @@ class MainActivity : AppCompatActivity() {
                 .maxByOrNull { it.maxDetectionRangeMeters }
             binding.maxRangeText.text = "Дальность: ${maxRange?.maxDetectionRangeMeters ?: 0}м"
 
-            if (!AdaptiveThreshold.isCalibrated()) {
-                binding.objectDescription.text = "Калибровка: ${AdaptiveThreshold.getProgress()}/20"
-                binding.objectEmoji.text = "⏳"
-                binding.objectName.text = "КАЛИБРОВКА"
-            }
-
         }
     }
 
