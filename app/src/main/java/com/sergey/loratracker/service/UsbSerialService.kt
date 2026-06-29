@@ -325,8 +325,13 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
             }
         }
 
-        if (lineBuffer.length > 8192) {
-            lineBuffer.delete(0, lineBuffer.length - 4096)
+        if (lineBuffer.length > 4096) {
+            val lastQuote = lineBuffer.lastIndexOf("'")
+            if (lastQuote > 0) {
+                lineBuffer.delete(0, lastQuote)
+            } else {
+                lineBuffer.clear()
+            }
         }
     }
     
