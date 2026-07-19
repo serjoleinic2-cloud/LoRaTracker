@@ -7,6 +7,16 @@ class Inmp441SoundDetector {
         if (packet.soundPeakFreq > maxPeakFreq) {
             return DetectionResult(false, 0f, null, SoundLevel.SILENT, DetectedObject.UNKNOWN, 0f, "Вне диапазона")
         }
-        return DetectedObject.classify(packet)
+        val detected = DetectedObject.classify(packet)
+        val isNearby = detected != DetectedObject.UNKNOWN
+        return DetectionResult(
+            isObjectNearby = isNearby,
+            confidence = if (isNearby) 1.0f else 0f,
+            estimatedRadiusMeters = if (isNearby) detected.maxDetectionRangeMeters else null,
+            soundLevel = if (isNearby) SoundLevel.HIGH else SoundLevel.SILENT,
+            detectedObject = detected,
+            rmsDb = 0f,
+            reason = "${detected.displayName} | peak=${packet.soundPeakFreq.toInt()}Hz"
+        )
     }
 }

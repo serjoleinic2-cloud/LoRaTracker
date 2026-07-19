@@ -39,12 +39,17 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
         private const val TAG = "UsbSerialService"
         private const val CHANNEL_ID = "lora_tracker_channel"
         private const val NOTIFICATION_ID = 1
-        
+        const val CMD_JAMMER_ON = "CMD_JAMMER_ON"
+        const val CMD_JAMMER_OFF = "CMD_JAMMER_OFF"
+
         private val _packetFlow = MutableSharedFlow<TelemetryPacket>(extraBufferCapacity = 10)
         val packetFlow: SharedFlow<TelemetryPacket> = _packetFlow.asSharedFlow()
-        
+
         private val _connectionState = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
         val connectionState: SharedFlow<Boolean> = _connectionState.asSharedFlow()
+
+        private val _jammerState = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
+        val jammerState: SharedFlow<Boolean> = _jammerState.asSharedFlow()
 
         var lastPacket: TelemetryPacket? = null
             private set
@@ -52,6 +57,12 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
         var lastPeak = 0f
 
         private val listeners = mutableListOf<(TelemetryPacket) -> Unit>()
+
+        private var instanceRef: UsbSerialService? = null
+
+        fun sendCommandStatic(command: String, power: Int) {
+            instanceRef?.sendCommand(command, power)
+        }
 
         fun addListener(listener: (TelemetryPacket) -> Unit) {
             listeners.add(listener)
@@ -70,6 +81,7 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
     
     override fun onCreate() {
         super.onCreate()
+        instanceRef = this
         FileLogger.init(this)
         FileLogger.d(TAG, "Service onCreate")
         createNotificationChannel()
@@ -328,11 +340,14 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
         }
 
         if (lineBuffer.length > 4096) {
-            val lastQuote = lineBuffer.lastIndexOf("'")
-            if (lastQuote > 0) {
-                lineBuffer.delete(0, lastQuote)
-            } else {
+            val lastClosing = lineBuffer.lastIndexOf("' with RSSI").coerceAtLeast(lineBuffer.lastIndexOf("'\n"))
+            if (lastClosing > 0) {
+                lineBuffer.delete(0, lastClosing + 1)
+            } else if (lineBuffer.lastIndexOf("'") <= 0) {
                 lineBuffer.clear()
+            } else {
+                val firstQuote = lineBuffer.indexOf("'")
+                if (firstQuote > 0) lineBuffer.delete(0, firstQuote)
             }
         }
     }
@@ -342,12 +357,33 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
         else java.time.LocalTime.of(h.toInt(), m.toInt(), s.toInt())
     }
 
+    fun sendCommand(command: String, power: Int = 100) {
+        val port = usbPort
+        if (port == null || !port.isOpen) {
+            FileLogger.e(TAG, "Cannot send command — port not open")
+            return
+        }
+        val cmd = "$command;$power\n"
+        try {
+            port.write(cmd.toByteArray(Charsets.UTF_8), 1000)
+            FileLogger.d(TAG, "CMD sent: ${cmd.trim()}")
+            _jammerState.tryEmit(command == CMD_JAMMER_ON)
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "Send command failed: ${e.message}")
+        }
+    }
+
+    fun isJammerActive(): Boolean {
+        return _jammerState.replayCache.lastOrNull() == true
+    }
+
     override fun onRunError(e: Exception?) {
         FileLogger.e(TAG, "Serial error", e)
         _connectionState.tryEmit(false)
     }
     
     override fun onDestroy() {
+        instanceRef = null
         serialIoManager?.stop()
         try {
             usbPort?.close()

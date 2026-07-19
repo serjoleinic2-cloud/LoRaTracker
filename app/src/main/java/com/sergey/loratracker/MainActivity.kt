@@ -9,8 +9,10 @@ import android.hardware.usb.UsbManager
 import android.net.ConnectivityManager
 import android.os.Build
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.util.Log
 import android.view.View
+import android.widget.SeekBar
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -55,6 +57,12 @@ class MainActivity : AppCompatActivity() {
     private var pendingUsbIntent: PendingIntent? = null
     private var isTestMode = false
     private var isFirstFix = true
+
+    private var isJammerActive = false
+    private var jammerPower = 75
+    private var jammerAutoEnabled = false
+    private var jammerTimer: CountDownTimer? = null
+    private var jammerCircle: Polygon? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -179,6 +187,33 @@ class MainActivity : AppCompatActivity() {
 
         binding.objectDescription.text = "Автокалибровка фона..."
         AdaptiveThreshold.reset()
+
+        binding.jammerPowerSlider.progress = jammerPower
+        binding.jammerPowerSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                jammerPower = progress.coerceIn(1, 100)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        binding.jammerOnButton.setOnClickListener {
+            sendJammerCommand(UsbSerialService.CMD_JAMMER_ON)
+        }
+
+        binding.jammerOffButton.setOnClickListener {
+            disableJammer("Ручное выключение")
+        }
+
+        DetectedObject.onDroneDetected = {
+            runOnUiThread {
+                if (!isJammerActive) {
+                    jammerAutoEnabled = true
+                    sendJammerCommand(UsbSerialService.CMD_JAMMER_ON)
+                    startJammerTimer(30000L)
+                }
+            }
+        }
     }
 
     private fun observeData() {
@@ -258,7 +293,6 @@ class MainActivity : AppCompatActivity() {
             binding.rssiText.text = "RSSI: ${packet.rssi} dBm"
             binding.rssiText.setTextColor(android.graphics.Color.parseColor(rssiColor))
             binding.peakFreqText.text = "Пик: ${packet.soundPeakFreq}Hz"
-            binding.centroidText.text = "Центр: ${packet.soundCenterFreq.toInt()}Hz"
 
             val maxRange = DetectedObject.values()
                 .filter { it != DetectedObject.UNKNOWN && packet.soundPeakFreq in it.peakFreqRange }
@@ -410,6 +444,8 @@ class MainActivity : AppCompatActivity() {
 
             mapView.invalidate()
             mapView.controller.animateTo(detectorPoint)
+
+            if (isJammerActive) updateJammerCircle()
         }
     }
 
@@ -491,6 +527,86 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        jammerTimer?.cancel()
+        DetectedObject.onDroneDetected = null
         if (wakeLock.isHeld) wakeLock.release()
+    }
+
+    private fun sendJammerCommand(command: String) {
+        FileLogger.d("MAIN", "sendJammerCommand: $command power=$jammerPower")
+
+        isJammerActive = (command == UsbSerialService.CMD_JAMMER_ON)
+        updateJammerUI()
+
+        UsbSerialService.sendCommandStatic(command, jammerPower)
+    }
+
+    private fun disableJammer(reason: String) {
+        FileLogger.d("MAIN", "disableJammer: $reason")
+        jammerTimer?.cancel()
+        jammerTimer = null
+        jammerAutoEnabled = false
+        isJammerActive = false
+        UsbSerialService.sendCommandStatic(UsbSerialService.CMD_JAMMER_OFF, 0)
+        updateJammerUI()
+    }
+
+    private fun startJammerTimer(durationMs: Long) {
+        jammerTimer?.cancel()
+        jammerTimer = object : CountDownTimer(durationMs, 1000) {
+            override fun onTick(millisUntilFinished: Long) {
+                val secs = (millisUntilFinished / 1000).toInt()
+                binding.jammerCountdownText.text = "Авто-выкл: ${secs}с"
+                binding.jammerCountdownText.visibility = View.VISIBLE
+            }
+            override fun onFinish() {
+                disableJammer("Таймаут 30с")
+            }
+        }.start()
+    }
+
+    private fun updateJammerUI() {
+        runOnUiThread {
+            if (isJammerActive) {
+                binding.jammerIndicator.text = "РЭБ: ВКЛ"
+                binding.jammerIndicator.setTextColor(android.graphics.Color.parseColor("#F44336"))
+                binding.jammerOnButton.alpha = 0.5f
+                binding.jammerOffButton.alpha = 1.0f
+            } else {
+                binding.jammerIndicator.text = "РЭБ: ВЫКЛ"
+                binding.jammerIndicator.setTextColor(android.graphics.Color.parseColor("#888888"))
+                binding.jammerOnButton.alpha = 1.0f
+                binding.jammerOffButton.alpha = 0.5f
+                binding.jammerCountdownText.visibility = View.GONE
+            }
+            updateJammerCircle()
+        }
+    }
+
+    private fun updateJammerCircle() {
+        val packet = viewModel.packet.value ?: return
+        val lat = packet.latitude
+        val lon = packet.longitude
+        if (lat == 0.0 && lon == 0.0) return
+
+        if (jammerCircle != null) {
+            mapView.overlays.remove(jammerCircle)
+            jammerCircle = null
+        }
+
+        if (isJammerActive) {
+            val center = GeoPoint(lat, lon)
+            val circle = Polygon().apply {
+                points = Polygon.pointsAsCircle(center, 20.0)
+                fillColor = 0x33FF0000
+                strokeColor = 0xFFFF0000.toInt()
+                strokeWidth = 3f
+            }
+            jammerCircle = circle
+            mapView.overlays.add(circle)
+            mapView.invalidate()
+        } else {
+            mapView.invalidate()
+        }
     }
 }

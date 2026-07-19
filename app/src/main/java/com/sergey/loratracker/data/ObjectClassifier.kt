@@ -11,33 +11,42 @@ enum class DetectedObject(
     val maxDetectionRangeMeters: Float,
     val description: String
 ) {
-    DRONE("Дрон", "\uD83D\uDE81", 500f..20000f, 1.0f, 0f, 500f, "Пропеллеры"),
+    DRONE("Дрон", "\uD83D\uDE81", 400f..20000f, 1.0f, 0f, 500f, "Пропеллеры"),
     UNKNOWN("Фон", "\uD83C\uDF3F", 0f..0f, 0f, 0f, 0f, "Нет сигнала");
 
     companion object {
-        fun classify(packet: TelemetryPacket): DetectionResult {
+        private val peakHistory = mutableListOf<Float>()
+        private const val HISTORY_SIZE = 5
+
+        var onDroneDetected: (() -> Unit)? = null
+
+        fun classify(packet: TelemetryPacket): DetectedObject {
             val peak = packet.soundPeakFreq
-            val centroid = packet.soundCenterFreq
 
-            FileLogger.d("CLASSIFY", "peak=${peak.toInt()} centroid=${centroid.toInt()}")
+            if (peak < 80f) return UNKNOWN
 
-            if (peak < 40f) {
-                return DetectionResult(false, 0f, null, SoundLevel.SILENT, UNKNOWN, 0f, "ТИШИНА")
+            peakHistory.add(peak)
+            if (peakHistory.size > HISTORY_SIZE) peakHistory.removeAt(0)
+
+            val variance = if (peakHistory.size >= 3) {
+                val avg = peakHistory.average().toFloat()
+                peakHistory.map { (it - avg) * (it - avg) }.average().toFloat()
+            } else 0f
+
+            FileLogger.d("CLASSIFY", "peak=${peak.toInt()} var=${variance.toInt()} history=${peakHistory.size}")
+
+            if (variance > 5000f) return UNKNOWN
+
+            if (peakHistory.size >= 3 && peakHistory.takeLast(3).all { it > 400f }) {
+                onDroneDetected?.invoke()
+                return DRONE
             }
 
-            if (centroid > 1000f || peak > 500f) {
-                return DetectionResult(
-                    isObjectNearby = true,
-                    confidence = 1.0f,
-                    estimatedRadiusMeters = 50f,
-                    soundLevel = SoundLevel.HIGH,
-                    detectedObject = DRONE,
-                    rmsDb = 0f,
-                    reason = "ДРОН | peak=${peak.toInt()}Hz centroid=${centroid.toInt()}Hz"
-                )
-            }
+            return UNKNOWN
+        }
 
-            return DetectionResult(false, 0f, null, SoundLevel.SILENT, UNKNOWN, 0f, "ФОН")
+        fun reset() {
+            peakHistory.clear()
         }
     }
 }
