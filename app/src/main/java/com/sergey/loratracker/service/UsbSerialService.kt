@@ -296,12 +296,14 @@ class UsbSerialService : Service(), SerialInputOutputManager.Listener {
                         rssi = rssi
                     )
 
-                    val isValid = packet.soundPeakFreq > 0f
+                    val isValid = packet.soundPeakFreq > 5f && packet.soundCenterFreq > 0f
                     val finalPacket = if (!isValid) {
                         packet.copy(soundType = "Микрофон неактивен", emoji = "⚠️")
                     } else {
                         packet
                     }
+
+                    FileLogger.d(TAG, "PKT: delay=${packet.delayMs} sats=${packet.gpsSats} lat=${packet.latitude} lon=${packet.longitude} t=${packet.temperature} peak=${packet.soundPeakFreq} center=${packet.soundCenterFreq} rssi=${packet.rssi}")
 
                     DetectorManager.emit(1, finalPacket)
 

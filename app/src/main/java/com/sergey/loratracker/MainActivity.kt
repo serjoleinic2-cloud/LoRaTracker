@@ -250,7 +250,13 @@ class MainActivity : AppCompatActivity() {
             }
             lastGpsPoint = currentPoint
             binding.tempText.text = "Темп: ${packet.temperature}°C"
+            val rssiColor = when {
+                packet.rssi > -60 -> "#4CAF50"
+                packet.rssi > -80 -> "#FFC107"
+                else -> "#F44336"
+            }
             binding.rssiText.text = "RSSI: ${packet.rssi} dBm"
+            binding.rssiText.setTextColor(android.graphics.Color.parseColor(rssiColor))
             binding.peakFreqText.text = "Пик: ${packet.soundPeakFreq}Hz"
             binding.centroidText.text = "Центр: ${packet.soundCenterFreq.toInt()}Hz"
 
