@@ -196,6 +196,16 @@
                 android:textColor="#FFFFFF"
                 android:textSize="12sp" />
 
+            <ToggleButton
+                android:id="@+id/demoToggle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textOn="ДЕМО: ВКЛ"
+                android:textOff="ДЕМО: ВЫКЛ"
+                android:backgroundTint="#FF9800"
+                android:textColor="#FFFFFF"
+                android:layout_margin="8dp" />
+
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
@@ -203,76 +213,14 @@
                 android:background="#1A1A2E" />
 
             <TextView
+                android:id="@+id/jammerStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="═══ РЭБ ═══"
-                android:textColor="#F44336"
+                android:text="РЭБ: авто (устройство)"
+                android:textColor="#4CAF50"
                 android:textSize="12sp"
-                android:textStyle="bold"
                 android:gravity="center"
-                android:paddingTop="4dp" />
-
-            <TextView
-                android:id="@+id/jammerIndicator"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:padding="4dp"
-                android:text="РЭБ: ВЫКЛ"
-                android:textColor="#888888"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/jammerCountdownText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:padding="2dp"
-                android:text=""
-                android:textColor="#FFC107"
-                android:textSize="11sp"
-                android:visibility="gone" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Мощность:"
-                android:textColor="#AAAAAA"
-                android:textSize="11sp"
-                android:paddingTop="4dp" />
-
-            <SeekBar
-                android:id="@+id/jammerPowerSlider"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:max="100"
-                android:progress="75"
-                android:progressTint="#F44336"
-                android:thumbTint="#F44336" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/jammerOnButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:backgroundTint="#F44336"
-                android:text="🔴 ВКЛ РЭБ"
-                android:textColor="#FFFFFF"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                app:cornerRadius="8dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/jammerOffButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:backgroundTint="#444444"
-                android:text="⬜ ВЫКЛ РЭБ"
-                android:textColor="#FFFFFF"
-                android:textSize="13sp"
-                app:cornerRadius="8dp" />
+                android:padding="4dp" />
 
         </LinearLayout>
     </ScrollView>

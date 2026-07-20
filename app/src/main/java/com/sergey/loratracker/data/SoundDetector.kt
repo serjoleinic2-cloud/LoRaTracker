@@ -12,7 +12,7 @@ class Inmp441SoundDetector {
         return DetectionResult(
             isObjectNearby = isNearby,
             confidence = if (isNearby) 1.0f else 0f,
-            estimatedRadiusMeters = if (isNearby) detected.maxDetectionRangeMeters else null,
+            estimatedRadiusMeters = if (isNearby) 500f else null,
             soundLevel = if (isNearby) SoundLevel.HIGH else SoundLevel.SILENT,
             detectedObject = detected,
             rmsDb = 0f,
