@@ -18,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.sergey.loratracker.data.DetectedObject
 import com.sergey.loratracker.data.DetectionResult
+import com.sergey.loratracker.data.ObjectClassifier
 import com.sergey.loratracker.data.TelemetryPacket
 import com.sergey.loratracker.databinding.ActivityMainBinding
 import com.sergey.loratracker.service.FileLogger
@@ -77,9 +78,12 @@ class MainActivity : AppCompatActivity() {
 
         binding.usbConnectButton.setOnClickListener { checkUsbDevices() }
 
-        binding.demoToggle.setOnCheckedChangeListener { _, isChecked ->
-            ObjectClassifier.demoMode = isChecked
-            val msg = if (isChecked) "ДЕМО: ВКЛ" else "ДЕМО: ВЫКЛ"
+        binding.testModeButton.visibility = View.VISIBLE
+        binding.testModeButton.text = "ДЕМО: ВЫКЛ"
+        binding.testModeButton.setOnClickListener {
+            ObjectClassifier.demoMode = !ObjectClassifier.demoMode
+            val msg = if (ObjectClassifier.demoMode) "ДЕМО: ВКЛ" else "ДЕМО: ВЫКЛ"
+            binding.testModeButton.text = msg
             Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         }
 
