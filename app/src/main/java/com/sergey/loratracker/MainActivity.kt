@@ -44,6 +44,8 @@ class MainActivity : AppCompatActivity() {
     private var gpsJumpCount = 0
     private val detectorMarkers = mutableMapOf<Int, Marker>()
     private var pendingUsbIntent: PendingIntent? = null
+    private var hasCenteredMap = false
+    private var lastDetectorPoint: GeoPoint? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,6 +79,12 @@ class MainActivity : AppCompatActivity() {
         )
 
         binding.usbConnectButton.setOnClickListener { checkUsbDevices() }
+
+        binding.centerMapButton.setOnClickListener {
+            lastDetectorPoint?.let { point ->
+                mapView.controller.animateTo(point)
+            }
+        }
 
         binding.testModeButton.visibility = View.VISIBLE
         binding.testModeButton.text = "ДЕМО: ВЫКЛ"
@@ -181,8 +189,13 @@ class MainActivity : AppCompatActivity() {
         if (!packet.isGpsValid) return
         val detectorPoint = GeoPoint(packet.latitude, packet.longitude)
         val detectorId = packet.detectorId
+        lastDetectorPoint = detectorPoint
 
         runOnUiThread {
+            if (!hasCenteredMap) {
+                hasCenteredMap = true
+                mapView.controller.animateTo(detectorPoint)
+            }
             val existingMarker = detectorMarkers[detectorId]
             if (existingMarker != null) {
                 existingMarker.position = detectorPoint
