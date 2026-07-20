@@ -18,7 +18,6 @@ import androidx.lifecycle.lifecycleScope
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.sergey.loratracker.data.DetectedObject
 import com.sergey.loratracker.data.DetectionResult
-import com.sergey.loratracker.data.ObjectClassifier
 import com.sergey.loratracker.data.TelemetryPacket
 import com.sergey.loratracker.databinding.ActivityMainBinding
 import com.sergey.loratracker.service.FileLogger
@@ -81,8 +80,8 @@ class MainActivity : AppCompatActivity() {
         binding.testModeButton.visibility = View.VISIBLE
         binding.testModeButton.text = "ДЕМО: ВЫКЛ"
         binding.testModeButton.setOnClickListener {
-            ObjectClassifier.demoMode = !ObjectClassifier.demoMode
-            val msg = if (ObjectClassifier.demoMode) "ДЕМО: ВКЛ" else "ДЕМО: ВЫКЛ"
+            DetectedObject.Companion.demoMode = !DetectedObject.Companion.demoMode
+            val msg = if (DetectedObject.Companion.demoMode) "ДЕМО: ВКЛ" else "ДЕМО: ВЫКЛ"
             binding.testModeButton.text = msg
             Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         }
@@ -134,7 +133,6 @@ class MainActivity : AppCompatActivity() {
             binding.tempText.text = "Темп: ${packet.temperature}°C"
             binding.rssiText.text = "RSSI: ${packet.rssi} dBm"
             binding.peakFreqText.text = "Пик: ${packet.soundPeakFreq.toInt()}Hz"
-            binding.centroidText.text = "Центр: ${packet.soundCenterFreq.toInt()}Hz"
         }
     }
 
@@ -148,7 +146,7 @@ class MainActivity : AppCompatActivity() {
             }
             binding.objectDescription.text = detection.reason
 
-            if (ObjectClassifier.demoMode && detection.detectedObject == DetectedObject.DRONE) {
+            if (DetectedObject.Companion.demoMode && detection.detectedObject == DetectedObject.DRONE) {
                 binding.objectName.setTextColor(android.graphics.Color.parseColor("#FF9800"))
             } else {
                 binding.objectName.setTextColor(android.graphics.Color.parseColor("#FFFFFF"))
