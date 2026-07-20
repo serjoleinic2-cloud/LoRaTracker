@@ -33,4 +33,6 @@ object FileLogger {
         write("E/$tag: $msg\n$stack")
     }
     fun w(tag: String, msg: String) = write("W/$tag: $msg")
+
+    fun getCurrentLogFile(): File? = logFile
 }

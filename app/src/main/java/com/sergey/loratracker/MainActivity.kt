@@ -63,13 +63,14 @@ class MainActivity : AppCompatActivity() {
         )
         Configuration.getInstance().osmdroidBasePath = osmPath
         Configuration.getInstance().osmdroidTileCache = File(osmPath, "tiles")
-        Configuration.getInstance().userAgentValue = "LoRaTracker/1.0"
+        Configuration.getInstance().userAgentValue = packageName
 
         mapView = binding.mapView
         mapView.setTileSource(TileSourceFactory.MAPNIK)
         mapView.setMultiTouchControls(true)
         mapView.controller.setZoom(17.0)
         mapView.controller.setCenter(GeoPoint(55.7539, 37.6208))
+        FileLogger.d("TILES", "Tile source=${mapView.tileProvider.tileSource.name()} userAgent=$packageName")
 
         usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
         pendingUsbIntent = PendingIntent.getBroadcast(
@@ -85,6 +86,9 @@ class MainActivity : AppCompatActivity() {
                 mapView.controller.animateTo(point)
             }
         }
+
+        binding.showLogsButton.setOnClickListener { showLogs() }
+        binding.shareLogsButton.setOnClickListener { shareLogs() }
 
         binding.testModeButton.visibility = View.VISIBLE
         binding.testModeButton.text = "ДЕМО: ВЫКЛ"
@@ -225,6 +229,37 @@ class MainActivity : AppCompatActivity() {
             }
             mapView.invalidate()
         }
+    }
+
+    private fun showLogs() {
+        val file = FileLogger.getCurrentLogFile()
+        if (file == null || !file.exists()) {
+            Toast.makeText(this, "Лог-файл не найден", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val text = file.readText().takeLast(6000)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(file.name)
+            .setMessage(text)
+            .setPositiveButton("Закрыть", null)
+            .show()
+    }
+
+    private fun shareLogs() {
+        val file = FileLogger.getCurrentLogFile()
+        if (file == null || !file.exists()) {
+            Toast.makeText(this, "Лог-файл не найден", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            this, "$packageName.fileprovider", file
+        )
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(intent, "Отправить лог"))
     }
 
     private fun checkUsbDevices() {

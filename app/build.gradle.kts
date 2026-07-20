@@ -46,7 +46,7 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.0")
 
     implementation("com.github.mik3y:usb-serial-for-android:3.8.0")
-    implementation("org.osmdroid:osmdroid-android:6.1.18")
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
 
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.3")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.8.3")
