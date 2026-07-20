@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private var lastGpsPoint: GeoPoint? = null
     private var gpsJumpCount = 0
     private val detectorMarkers = mutableMapOf<Int, Marker>()
+    private var objectMarker: Marker? = null
     private var pendingUsbIntent: PendingIntent? = null
     private var hasCenteredMap = false
     private var lastDetectorPoint: GeoPoint? = null
@@ -57,20 +58,30 @@ class MainActivity : AppCompatActivity() {
 
         val osmPath = File(filesDir, "osmdroid")
         osmPath.mkdirs()
-        Configuration.getInstance().load(
-            this,
-            getSharedPreferences("osmdroid", Context.MODE_PRIVATE)
-        )
+
+        val cacheDir = File(osmPath, "tiles")
+        if (cacheDir.exists()) {
+            cacheDir.deleteRecursively()
+            cacheDir.mkdirs()
+        }
+
+        Configuration.getInstance().load(this, getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
         Configuration.getInstance().osmdroidBasePath = osmPath
-        Configuration.getInstance().osmdroidTileCache = File(osmPath, "tiles")
-        Configuration.getInstance().userAgentValue = packageName
+        Configuration.getInstance().osmdroidTileCache = cacheDir
+        Configuration.getInstance().userAgentValue = "LoRaTracker/1.0"
 
         mapView = binding.mapView
         mapView.setTileSource(TileSourceFactory.MAPNIK)
+        mapView.setUseDataConnection(true)
+        mapView.setDestroyMode(false)
+        mapView.setTilesScaledToDpi(true)
         mapView.setMultiTouchControls(true)
-        mapView.controller.setZoom(17.0)
+        mapView.controller.setZoom(15.0)
         mapView.controller.setCenter(GeoPoint(55.7539, 37.6208))
-        FileLogger.d("TILES", "Tile source=${mapView.tileProvider.tileSource.name()} userAgent=$packageName")
+
+        mapView.postDelayed({
+            mapView.invalidate()
+        }, 1000)
 
         usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
         pendingUsbIntent = PendingIntent.getBroadcast(
@@ -220,12 +231,24 @@ class MainActivity : AppCompatActivity() {
                 val angle = (packet.delayMs % 360).toDouble()
                 val objLat = packet.latitude + kotlin.math.cos(Math.toRadians(angle)) * dist * 0.00001
                 val objLon = packet.longitude + kotlin.math.sin(Math.toRadians(angle)) * dist * 0.00001
-                val objMarker = Marker(mapView).apply {
-                    position = GeoPoint(objLat, objLon)
-                    title = "${detection.detectedObject.emoji} ${detection.detectedObject.displayName}"
-                    snippet = "Детектор $detectorId | ${dist.toInt()}м"
+
+                if (objectMarker != null) {
+                    objectMarker!!.position = GeoPoint(objLat, objLon)
+                    objectMarker!!.title = "${detection.detectedObject.emoji} ${detection.detectedObject.displayName}"
+                } else {
+                    objectMarker = Marker(mapView).apply {
+                        position = GeoPoint(objLat, objLon)
+                        title = "${detection.detectedObject.emoji} ${detection.detectedObject.displayName}"
+                        snippet = "Детектор $detectorId | ${dist.toInt()}м"
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    }
+                    mapView.overlays.add(objectMarker)
                 }
-                mapView.overlays.add(objMarker)
+            } else {
+                objectMarker?.let {
+                    mapView.overlays.remove(it)
+                    objectMarker = null
+                }
             }
             mapView.invalidate()
         }
